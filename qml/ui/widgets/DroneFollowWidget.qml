@@ -4,11 +4,11 @@ import Qt.labs.settings 1.0
 import OpenHD 1.0
 import "../elements"
 
-// Floating widget for controlling the Hailo drone follow app from the ground.
-// Short-click opens a popup letting the operator pick a tracked person, pause
-// the drone (IDLE), or return to auto mode.
+// Drone follow status overlay — centered on the HUD crosshairs.
+// The top portion of the widget overlaps the horizon center indicator, making
+// it clickable. A colour-coded status label appears just below the crosshair.
 //
-// Badge states (DF_FOLLOW_ID / DF_ACTIVE_ID):
+// Label states (DF_FOLLOW_ID / DF_ACTIVE_ID):
 //   followId < 0  → IDLE (amber)  — drone holds position, ignores detections
 //   followId = 0, activeId = 0  → AUTO (grey)  — no one in view
 //   followId = 0, activeId > 0  → AUTO · #N (teal) — system auto-picked N
@@ -16,19 +16,16 @@ import "../elements"
 BaseWidget {
     id: droneFollowWidget
     width: 140
-    height: 36
+    height: 56   // upper 32px transparent over crosshair + 24px label below
 
     visible: settings.show_widgets
 
     widgetIdentifier: "drone_follow_widget"
     bw_verbose_name: "DRONE FOLLOW"
 
-    // Bottom-left area, offset inward from the corner
-    defaultAlignment: 3
-    defaultXOffset: 60
-    defaultYOffset: 60
-    defaultHCenter: false
-    defaultVCenter: false
+    // Centered on the HUD, overlapping the horizon crosshairs
+    defaultHCenter: true
+    defaultVCenter: true
 
     hasWidgetDetail: false
     hasWidgetAction: true
@@ -61,12 +58,9 @@ BaseWidget {
     }
 
     // Periodic refetch: keeps DF_ACTIVE_ID and DF_AVAIL_IDS fresh in the cache.
-    // try_refetch_all_parameters_async replaces the full param cache but does NOT
-    // fire update_countChanged, so we also listen to curr_get_all_progress_perc
-    // reaching 100 to trigger refreshState() after each completed refetch.
     Timer {
         id: outerRefetchTimer
-        interval: 3000
+        interval: 1000
         repeat: true
         running: droneFollowWidget.visible
         onTriggered: {
@@ -82,9 +76,12 @@ BaseWidget {
             if (_ohdSystemAirSettingsModel.curr_get_all_progress_perc >= 100)
                 droneFollowWidget.refreshState()
         }
-        // Fires after individual param writes (operator button taps)
+        // Fires after individual param writes — also trigger a refetch so
+        // server-side read-only state (active_id) is picked up promptly.
         function onUpdate_countChanged() {
             droneFollowWidget.refreshState()
+            if (!_ohdSystemAirSettingsModel.ui_is_busy)
+                _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
         }
     }
 
@@ -93,8 +90,7 @@ BaseWidget {
         width: 240
         height: 360
 
-        // Read cached values at 800ms while popup is open — fast feedback
-        // after button taps and after refetches triggered by outerRefetchTimer.
+        // Read cached values at 800ms while popup is open
         Timer {
             id: popupRefreshTimer
             interval: 800
@@ -105,7 +101,6 @@ BaseWidget {
 
         onVisibleChanged: {
             if (visible) {
-                // Immediate refetch on open (don't wait for outerRefetchTimer)
                 if (!_ohdSystemAirSettingsModel.ui_is_busy)
                     _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
                 droneFollowWidget.refreshState()
@@ -172,6 +167,7 @@ BaseWidget {
                     onClicked: {
                         _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", modelData)
                         followId = modelData
+                        droneFollowWidget.bw_manually_close_action_popup()
                     }
                 }
             }
@@ -183,7 +179,7 @@ BaseWidget {
                 text: followId <= 0
                       ? (activeId > 0 ? "\u2713  AUTO (tracking #" + activeId + ")" : "\u2713  AUTO (LARGEST)")
                       : "CLEAR \u2014 USE AUTO"
-                highlighted: followId <= 0 && followId >= 0  // true when followId == 0
+                highlighted: followId === 0
                 background: Rectangle {
                     color: (followId === 0) ? "#226644" : "#444444"
                     radius: 4
@@ -201,7 +197,8 @@ BaseWidget {
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
                     followId = 0
-                    activeId = 0  // optimistic reset — badge snaps to AUTO immediately
+                    activeId = 0  // optimistic reset — next report provides real active ID
+                    droneFollowWidget.bw_manually_close_action_popup()
                 }
             }
 
@@ -228,42 +225,52 @@ BaseWidget {
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", -1)
                     followId = -1
+                    droneFollowWidget.bw_manually_close_action_popup()
                 }
             }
         }
     }
 
-    // --- Compact badge (closed state) ---
+    // --- Crosshair overlay (closed state) ---
+    // The top 32px are transparent, sitting over the horizon center indicator
+    // so the operator can tap the crosshair to open the popup.
+    // The status label is anchored to the bottom, just below the crosshair.
     Item {
         id: widgetInner
         anchors.fill: parent
 
         Rectangle {
-            anchors.fill: parent
-            color: followId > 0  ? "#992233"   // red — operator locked
-                 : followId < 0  ? "#7a5000"   // amber — IDLE
-                 : activeId > 0  ? "#1a5f5f"   // teal — auto-tracking someone
-                 : "#333333"                    // grey — no one in view
+            id: statusLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 2
+            width: labelText.contentWidth + 16
+            height: 22
+            color: followId > 0  ? "#992233"
+                 : followId < 0  ? "#7a5000"
+                 : activeId > 0  ? "#1a5f5f"
+                 : "#333333"
             opacity: 0.85
-            radius: 4
+            radius: 11
             border.color: followId > 0  ? "#ff4466"
                         : followId < 0  ? "#ffaa00"
                         : activeId > 0  ? "#33bbbb"
                         : "#555555"
             border.width: 1
-        }
 
-        Text {
-            anchors.centerIn: parent
-            text: followId > 0   ? "\u25CE  #" + followId
-                : followId < 0   ? "\u25CE  IDLE"
-                : activeId > 0   ? "\u25CE  AUTO \u00B7 #" + activeId
-                : "\u25CE  AUTO"
-            color: "white"
-            font.pixelSize: 13
-            font.bold: true
-            style: Text.Outline
-            styleColor: settings.color_glow
+            Text {
+                id: labelText
+                anchors.centerIn: parent
+                text: followId > 0   ? "\u25CE  #" + followId
+                    : followId < 0   ? "\u25CE  IDLE"
+                    : activeId > 0   ? "\u25CE  AUTO \u00B7 #" + activeId
+                    : "\u25CE  AUTO"
+                color: "white"
+                font.pixelSize: 11
+                font.bold: true
+                style: Text.Outline
+                styleColor: settings.color_glow
+            }
         }
     }
 }
