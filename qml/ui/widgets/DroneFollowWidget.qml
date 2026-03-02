@@ -68,11 +68,26 @@ BaseWidget {
         width: 240
         height: 320
 
+        // Periodically refresh state while the popup is open.
+        // This catches async refetch completions (try_refetch_all_parameters_async
+        // replaces the full param set without firing update_countChanged) and
+        // ensures DF_AVAIL_IDS and DF_FOLLOW_ID stay current.
+        Timer {
+            id: popupRefreshTimer
+            interval: 800
+            repeat: true
+            running: false
+            onTriggered: droneFollowWidget.refreshState()
+        }
+
         onVisibleChanged: {
             if (visible) {
                 // Trigger a fresh fetch so the ID list is up-to-date
                 _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
                 droneFollowWidget.refreshState()
+                popupRefreshTimer.start()
+            } else {
+                popupRefreshTimer.stop()
             }
         }
 
