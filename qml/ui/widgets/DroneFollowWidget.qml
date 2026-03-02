@@ -201,6 +201,7 @@ BaseWidget {
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
                     followId = 0
+                    activeId = 0  // optimistic reset — badge snaps to AUTO immediately
                 }
             }
 
