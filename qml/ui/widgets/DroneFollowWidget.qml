@@ -60,10 +60,29 @@ BaseWidget {
             availIds = parseAvailIds(_ohdSystemAirSettingsModel.get_cached_string("DF_AVAIL_IDS"))
     }
 
-    // Auto-refresh whenever an individual param is written (e.g. after the
-    // operator taps a button and the round-trip completes)
+    // Periodic refetch: keeps DF_ACTIVE_ID and DF_AVAIL_IDS fresh in the cache.
+    // try_refetch_all_parameters_async replaces the full param cache but does NOT
+    // fire update_countChanged, so we also listen to curr_get_all_progress_perc
+    // reaching 100 to trigger refreshState() after each completed refetch.
+    Timer {
+        id: outerRefetchTimer
+        interval: 3000
+        repeat: true
+        running: droneFollowWidget.visible
+        onTriggered: {
+            if (!_ohdSystemAirSettingsModel.ui_is_busy)
+                _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
+        }
+    }
+
     Connections {
         target: _ohdSystemAirSettingsModel
+        // Fires after each completed full refetch (progress reaches 100)
+        function onCurr_get_all_progress_percChanged() {
+            if (_ohdSystemAirSettingsModel.curr_get_all_progress_perc >= 100)
+                droneFollowWidget.refreshState()
+        }
+        // Fires after individual param writes (operator button taps)
         function onUpdate_countChanged() {
             droneFollowWidget.refreshState()
         }
@@ -74,10 +93,8 @@ BaseWidget {
         width: 240
         height: 360
 
-        // Periodically refresh while popup is open.
-        // try_refetch_all_parameters_async replaces the full param cache via
-        // ui_thread_replace_param_set which does NOT fire update_countChanged,
-        // so we poll here to catch completed refetches.
+        // Read cached values at 800ms while popup is open — fast feedback
+        // after button taps and after refetches triggered by outerRefetchTimer.
         Timer {
             id: popupRefreshTimer
             interval: 800
@@ -88,7 +105,9 @@ BaseWidget {
 
         onVisibleChanged: {
             if (visible) {
-                _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
+                // Immediate refetch on open (don't wait for outerRefetchTimer)
+                if (!_ohdSystemAirSettingsModel.ui_is_busy)
+                    _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
                 droneFollowWidget.refreshState()
                 popupRefreshTimer.start()
             } else {
