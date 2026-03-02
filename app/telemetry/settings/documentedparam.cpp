@@ -621,6 +621,57 @@ static std::vector<std::shared_ptr<XParam>> get_parameters_list(){
                 "enables / disables audio streaming from air to ground. In development. Use test mode to validate your ground audio output."
                    );
     }
+    // Hailo Drone Follow params (DF_*)
+    // Float-typed params are scaled ×100 as MAVLink INT (e.g. kp_yaw=5.0 → DF_KP_YAW=500).
+    {
+        auto yn_items = std::vector<ImprovedIntSetting::Item>{{"OFF", 0}, {"ON", 1}};
+        append_int(ret, "DF_KP_YAW",
+                   ImprovedIntSetting::createRangeOnly(0, 3000),
+                   "Yaw P-gain (×100, e.g. 500 = 5.0). Controls yaw rate in response to horizontal target offset.");
+        append_int(ret, "DF_KP_FWD",
+                   ImprovedIntSetting::createRangeOnly(0, 3000),
+                   "Forward P-gain (×100). Controls approach speed in response to target being too far.");
+        append_int(ret, "DF_KP_BACK",
+                   ImprovedIntSetting::createRangeOnly(0, 3000),
+                   "Backward P-gain (×100). Controls retreat speed in response to target being too close.");
+        append_int(ret, "DF_MAX_FWD",
+                   ImprovedIntSetting::createRangeOnly(0, 1500),
+                   "Max forward speed in m/s (×100, e.g. 200 = 2.0 m/s).");
+        append_int(ret, "DF_MAX_BACK",
+                   ImprovedIntSetting::createRangeOnly(0, 1500),
+                   "Max backward speed in m/s (×100, e.g. 300 = 3.0 m/s).");
+        append_int(ret, "DF_TGT_DIST",
+                   ImprovedIntSetting::createRangeOnly(0, 5000),
+                   "Target follow distance in m (×100, e.g. 300 = 3.0 m). Set 0 to use bbox-height control mode instead.");
+        append_int(ret, "DF_DZ_H_PCT",
+                   ImprovedIntSetting::createRangeOnly(0, 5000),
+                   "Dead zone as % of target bbox height (×100, e.g. 500 = 5.0%). No forward/back response within this band.");
+        append_int(ret, "DF_YAW_ALPHA",
+                   ImprovedIntSetting::createRangeOnly(1, 100),
+                   "Yaw EMA smoothing factor (×100, e.g. 30 = 0.30). Lower = more smoothing, higher = faster response.");
+        append_int(ret, "DF_FWD_ALPHA",
+                   ImprovedIntSetting::createRangeOnly(1, 100),
+                   "Forward EMA smoothing factor (×100, e.g. 10 = 0.10). Lower = more smoothing, higher = faster response.");
+        append_int(ret, "DF_TAKEOFF_M",
+                   ImprovedIntSetting::createRangeOnly(100, 2000),
+                   "Takeoff altitude in m (×100, e.g. 300 = 3.0 m).");
+        append_int(ret, "DF_YAW_ONLY",
+                   ImprovedIntSetting(0, 1, yn_items),
+                   "Yaw-only mode: rotate toward target but do not move forward/backward or adjust altitude.");
+        append_int(ret, "DF_FIX_ALT",
+                   ImprovedIntSetting(0, 1, yn_items),
+                   "Fixed altitude mode: hold current altitude and do not adjust based on target position in frame.");
+        append_int(ret, "DF_SMTH_YAW",
+                   ImprovedIntSetting(0, 1, yn_items),
+                   "Enable yaw EMA smoothing filter (controlled by DF_YAW_ALPHA).");
+        append_int(ret, "DF_SMTH_FWD",
+                   ImprovedIntSetting(0, 1, yn_items),
+                   "Enable forward/backward EMA smoothing filter (controlled by DF_FWD_ALPHA).");
+        append_only_documented(ret, "DF_FOLLOW_ID",
+                   "Tracking ID of person to follow. 0 = auto (largest person in frame). Use the Drone Follow widget to select from currently visible IDs.");
+        append_documented_read_only(ret, "DF_AVAIL_IDS",
+                   "Comma-separated list of person tracking IDs currently visible in frame. Read-only; updated automatically by the Hailo drone follow app.");
+    }
     return ret;
 }
 

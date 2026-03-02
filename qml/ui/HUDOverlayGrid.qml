@@ -500,6 +500,10 @@ Item {
             id: exampleWidget
         }
 
+        DroneFollowWidget {
+            id: droneFollowWidget
+        }
+
         DistanceSensorWidget{
             id: distancesensorwidget
         }
