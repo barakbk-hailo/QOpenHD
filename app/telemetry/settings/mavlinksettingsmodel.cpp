@@ -163,6 +163,15 @@ MavlinkSettingsModel::SetParamResult MavlinkSettingsModel::try_set_param_int_imp
     return result ? SetParamResult::SUCCESS : SetParamResult::NO_CONNECTION;
 }
 
+MavlinkSettingsModel::SetParamResult MavlinkSettingsModel::try_set_param_float_impl(const QString param_id, float value)
+{
+    auto command=XParam::create_cmd_set_float(m_sys_id,m_comp_id,param_id.toStdString(),value);
+    m_is_currently_busy=true;
+    const auto result=XParam::instance().try_set_param_blocking(command);
+    m_is_currently_busy=false;
+    return result ? SetParamResult::SUCCESS : SetParamResult::NO_CONNECTION;
+}
+
 MavlinkSettingsModel::SetParamResult MavlinkSettingsModel::try_set_param_string_impl(const QString param_id,QString value)
 {
     auto command=XParam::create_cmd_set_string(m_sys_id,m_comp_id,param_id.toStdString(),value.toStdString());
@@ -194,6 +203,29 @@ void MavlinkSettingsModel::try_set_param_int_async(const QString param_id, int v
        m_is_currently_busy=false;
        set_ui_is_busy(false);
        finalize_update_param(param_id,static_cast<int32_t>(value),result.is_accepted(),log_result);
+    };
+    XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
+}
+
+void MavlinkSettingsModel::try_set_param_float_async(const QString param_id, float value, bool log_result)
+{
+    if(m_is_currently_busy){
+        qDebug()<<"BUSY";
+        finalize_update_param(param_id,value,false,log_result);
+        return;
+    }
+    auto command=XParam::create_cmd_set_float(m_sys_id,m_comp_id,param_id.toStdString(),value);
+    m_is_currently_busy=true;
+    set_ui_is_busy(true);
+    XParam::SET_PARAM_RESULT_CB imp_cb=[this,value,param_id,log_result](XParam::SetParamResult result){
+       if(result.is_accepted()){
+           MavlinkSettingsModel::SettingData tmp{param_id,value};
+           updateData(std::nullopt,tmp);
+       }
+       qDebug()<<"Result:"<<m_comp_id<<":"<<result.is_accepted();
+       m_is_currently_busy=false;
+       set_ui_is_busy(false);
+       finalize_update_param(param_id,value,result.is_accepted(),log_result);
     };
     XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
 }
@@ -245,6 +277,22 @@ QString MavlinkSettingsModel::try_update_parameter_int(const QString param_id,in
     return "Update failed, unknown error";
 }
 
+QString MavlinkSettingsModel::try_update_parameter_float(const QString param_id, float value)
+{
+    qDebug()<<"try_update_parameter_float:"<<param_id<<","<<value;
+    const auto result=try_set_param_float_impl(param_id,value);
+    if(result==SetParamResult::SUCCESS){
+        MavlinkSettingsModel::SettingData tmp{param_id,value};
+        updateData(std::nullopt,tmp);
+        return "";
+    }
+    qDebug()<<"Failure code:"<<set_param_result_as_string(result).c_str();
+    if(result==SetParamResult::NO_CONNECTION){
+        return "Update failed,try again";
+    }
+    return "Update failed, unknown error";
+}
+
 QString MavlinkSettingsModel::try_update_parameter_string(const QString param_id,QString value)
 {
     qDebug()<<"try_update_parameter_string:"<<param_id<<","<<value;
@@ -287,26 +335,34 @@ QVariant MavlinkSettingsModel::data(const QModelIndex &index, int role) const
         if(std::holds_alternative<int32_t>(data.value)){
             return std::get<int32_t>(data.value);
         }
-        // We have either string or int, but assert to make it clear to someone reading the code
+        if(std::holds_alternative<float>(data.value)){
+            return static_cast<double>(std::get<float>(data.value));
+        }
         assert(std::holds_alternative<std::string>(data.value));
         return QString(std::get<std::string>(data.value).c_str());
    } else if (role==ExtraValueRole){
-        if(std::holds_alternative<int>(data.value)){
+        if(std::holds_alternative<int32_t>(data.value)){
             if(data.unique_id=="CAMERA_TYPE"){
-                auto value=std::get<int>(data.value);
+                auto value=std::get<int32_t>(data.value);
                 XCamera tmp{value,0,0};
                 return tmp.cam_type_as_verbose_string().c_str();
             }
-            auto value=std::get<int>(data.value);
+            auto value=std::get<int32_t>(data.value);
             return int_enum_get_readable(data.unique_id,value);
         }
-        // We only support int and string
+        if(std::holds_alternative<float>(data.value)){
+            auto value=std::get<float>(data.value);
+            return QString::number(static_cast<double>(value),'f',3);
+        }
         assert(std::holds_alternative<std::string>(data.value));
         auto value=std::get<std::string>(data.value);
         return string_enum_get_readable(data.unique_id,value.c_str());
     } else if (role==ValueTypeRole){
-        if(std::holds_alternative<int>(data.value)){
+        if(std::holds_alternative<int32_t>(data.value)){
             return 0;
+        }
+        if(std::holds_alternative<float>(data.value)){
+            return 2;
         }
         return 1;
     } else if(role == ShortDescriptionRole){
@@ -566,11 +622,22 @@ bool MavlinkSettingsModel::param_int_exists(QString param_id)
     //qDebug()<<"Size:"<<m_data.size();
     for(const auto& tmp:m_data){
         //qDebug()<<tmp.unique_id;
-        if(tmp.unique_id==param_id && std::holds_alternative<int>(tmp.value)){
+        if(tmp.unique_id==param_id && std::holds_alternative<int32_t>(tmp.value)){
             return true;
         }
     }
     qDebug()<<"int Param:"+param_id<<" does not exist";
+    return false;
+}
+
+bool MavlinkSettingsModel::param_float_exists(QString param_id)
+{
+    for(const auto& tmp:m_data){
+        if(tmp.unique_id==param_id && std::holds_alternative<float>(tmp.value)){
+            return true;
+        }
+    }
+    qDebug()<<"float Param:"+param_id<<" does not exist";
     return false;
 }
 
@@ -588,12 +655,23 @@ bool MavlinkSettingsModel::param_string_exists(QString param_id)
 int MavlinkSettingsModel::get_cached_int(QString param_id)
 {
     for(const auto& tmp:m_data){
-        if(tmp.unique_id.compare(param_id)==0 && std::holds_alternative<int>(tmp.value)){
-            return std::get<int>(tmp.value);
+        if(tmp.unique_id.compare(param_id)==0 && std::holds_alternative<int32_t>(tmp.value)){
+            return std::get<int32_t>(tmp.value);
         }
     }
     qDebug()<<param_id<<" NOT FOUND";
     return -1;
+}
+
+float MavlinkSettingsModel::get_cached_float(QString param_id)
+{
+    for(const auto& tmp:m_data){
+        if(tmp.unique_id.compare(param_id)==0 && std::holds_alternative<float>(tmp.value)){
+            return std::get<float>(tmp.value);
+        }
+    }
+    qDebug()<<param_id<<" NOT FOUND";
+    return 0.0f;
 }
 
 QString MavlinkSettingsModel::get_cached_string(QString param_id)
@@ -620,6 +698,9 @@ void MavlinkSettingsModel::remove_and_replace_param_set(const std::vector<mavlin
         }else if(param.string_param.has_value()){
             auto tmp=QtParamValue{param.param_id.c_str(),param.string_param->c_str(),1};
             qt_param_set.param_set.push_back(tmp);
+        }else if(param.float_param.has_value()){
+            auto tmp=QtParamValue{param.param_id.c_str(),static_cast<double>(param.float_param.value()),2};
+            qt_param_set.param_set.push_back(tmp);
         }
     }
     emit signal_ui_thread_replace_param_set(qt_param_set);
@@ -636,9 +717,12 @@ void MavlinkSettingsModel::ui_thread_replace_param_set(QtParamSet qt_param_set)
     for(int i=0;i<qt_param_set.param_set.size();i++){
         const auto param=qt_param_set.param_set[i];
         const QString param_id=param.param_id;
-        std::variant<int32_t,std::string> param_value;
+        std::variant<int32_t,float,std::string> param_value;
         if(param.type==0){
             int32_t value=param.param_value.value<int>();
+            param_value=value;
+        }else if(param.type==2){
+            float value=static_cast<float>(param.param_value.value<double>());
             param_value=value;
         }else{
             QString value=param.param_value.value<QString>();
@@ -649,7 +733,7 @@ void MavlinkSettingsModel::ui_thread_replace_param_set(QtParamSet qt_param_set)
     }
 }
 
-void MavlinkSettingsModel::finalize_update_param(QString param_id,std::variant<int32_t,std::string> value, bool success,bool log_result)
+void MavlinkSettingsModel::finalize_update_param(QString param_id,std::variant<int32_t,float,std::string> value, bool success,bool log_result)
 {
     set_last_updated_param_id(param_id);
     set_last_updated_param_success(success);
@@ -658,6 +742,8 @@ void MavlinkSettingsModel::finalize_update_param(QString param_id,std::variant<i
          ss<<"Update "<<param_id.toStdString()<<" to ";
          if(std::holds_alternative<int32_t>(value)){
              ss<<std::get<int32_t>(value);
+         }else if(std::holds_alternative<float>(value)){
+             ss<<std::get<float>(value);
          }else{
              ss<<std::get<std::string>(value);
          }

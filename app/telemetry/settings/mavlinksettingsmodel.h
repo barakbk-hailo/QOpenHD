@@ -60,6 +60,7 @@ public:
     // then updates the internal cached parameter
     // return is kinda dirty, but since we use it from QML - returns an empty string "" on success, an error code otherwise
     Q_INVOKABLE QString try_update_parameter_int(const QString param_id,int value);
+    Q_INVOKABLE QString try_update_parameter_float(const QString param_id,float value);
     Q_INVOKABLE QString try_update_parameter_string(const QString param_id,QString value);
 
     enum Roles {
@@ -73,7 +74,7 @@ public:
         // In case the param is an int and we do have enum mapping -> convert the int to the enum string, then return
         // In case the param is an string, just return the string
         ExtraValueRole,
-        // The internally stored type. 0==int, 1==std::string
+        // The internally stored type. 0==int, 1==string, 2==float
         ValueTypeRole,
         // A description for this parameter. Not all parameters are documented yet, in this case this will return "TODO"
         ShortDescriptionRole,
@@ -89,9 +90,8 @@ public:
     struct SettingData{
         // The unique parameter identifier
         QString unique_id;
-        // We support int and string values - NOTHING ELSE ! Please keep it this way, there are reasons for it.
-        // On a side node, PX4 / ardupilot do it the same !
-        std::variant<int32_t,std::string> value;
+        // We support int, float, and string values.
+        std::variant<int32_t,float,std::string> value;
     };
 public slots:
     void removeData(int row);
@@ -110,9 +110,11 @@ private:
     };
     static std::string set_param_result_as_string(const SetParamResult& res);
     SetParamResult try_set_param_int_impl(const QString param_id,int value);
+    SetParamResult try_set_param_float_impl(const QString param_id,float value);
     SetParamResult try_set_param_string_impl(const QString param_id,QString value);
 public:
     Q_INVOKABLE void try_set_param_int_async(const QString param_id,int value,bool log_result=false);
+    Q_INVOKABLE void try_set_param_float_async(const QString param_id,float value,bool log_result=false);
     Q_INVOKABLE void try_set_param_string_async(const QString param_id,QString value,bool log_result=false);
     Q_INVOKABLE bool system_is_alive();
 public:
@@ -158,10 +160,12 @@ public:
 
     Q_INVOKABLE bool get_param_requires_manual_reboot(QString param_id);
 public:
-    // Returns true if the given (int,string) param exists
+    // Returns true if the given (int,float,string) param exists
     Q_INVOKABLE bool param_int_exists(QString param_id);
+    Q_INVOKABLE bool param_float_exists(QString param_id);
     Q_INVOKABLE bool param_string_exists(QString param_id);
     Q_INVOKABLE int get_cached_int(QString param_id);
+    Q_INVOKABLE float get_cached_float(QString param_id);
     Q_INVOKABLE QString get_cached_string(QString param_id);
 private:;
     void remove_and_replace_param_set(const std::vector<mavlink_param_ext_value_t>& param_set);
@@ -182,7 +186,7 @@ private:
     std::atomic<bool> m_is_ready=false;
     std::atomic_bool m_is_currently_busy=false;
 private:
-    void finalize_update_param(QString param_id,std::variant<int32_t,std::string> value, bool success,bool log_result);
+    void finalize_update_param(QString param_id,std::variant<int32_t,float,std::string> value, bool success,bool log_result);
     void perform_dirty_actions(const MavlinkSettingsModel::SettingData& data);
 };
 

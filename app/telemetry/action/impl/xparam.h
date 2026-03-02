@@ -54,12 +54,14 @@ public:
 public:
     static mavlink_param_ext_set_t create_cmd_set_int(int target_sysid,int target_compid,std::string param_name,int value);
     static mavlink_param_ext_set_t create_cmd_set_string(int target_sysid,int target_compid,std::string param_id,std::string value);
+    static mavlink_param_ext_set_t create_cmd_set_float(int target_sysid,int target_compid,std::string param_id,float value);
     static mavlink_param_ext_request_list_t create_cmd_get_all(int target_sysid,int target_compid);
 
     struct ParamVariant{
         std::string param_id;
         std::optional<std::string> string_param;
         std::optional<int> int_param;
+        std::optional<float> float_param;
     };
     static std::vector<ParamVariant> parse_server_param_set(const std::vector<mavlink_param_ext_value_t>& param_set);
 public:

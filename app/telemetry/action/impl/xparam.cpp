@@ -150,6 +150,15 @@ static int get_param_value_int(const char* param_value){
     std::memcpy(&ret,param_value,sizeof(ret));
     return ret;
 }
+static void set_param_value_float(char* param_value, float value){
+    std::memset(param_value,0,128);
+    std::memcpy(param_value, &value, sizeof(value));
+}
+static float get_param_value_float(const char* param_value){
+    float ret;
+    std::memcpy(&ret, param_value, sizeof(ret));
+    return ret;
+}
 static std::string get_param_value_string(const char* param_value){
     char param_value_long_enough[128 + 1] = {};
     std::memcpy(param_value_long_enough, param_value,128);
@@ -179,6 +188,17 @@ mavlink_param_ext_set_t XParam::create_cmd_set_string(int target_sysid, int targ
     return cmd;
 }
 
+mavlink_param_ext_set_t XParam::create_cmd_set_float(int target_sysid, int target_compid, std::string param_id, float value)
+{
+    mavlink_param_ext_set_t cmd{};
+    cmd.target_system=target_sysid;
+    cmd.target_component=target_compid;
+    set_param_id(cmd.param_id,param_id);
+    cmd.param_type=MAV_PARAM_EXT_TYPE_REAL32;
+    set_param_value_float(cmd.param_value,value);
+    return cmd;
+}
+
 mavlink_param_ext_request_list_t XParam::create_cmd_get_all(int target_sysid, int target_compid)
 {
     mavlink_param_ext_request_list_t cmd{};
@@ -193,11 +213,13 @@ std::vector<XParam::ParamVariant> XParam::parse_server_param_set(const std::vect
     ret.reserve(param_set.size());
     for(int i=0;i<param_set.size();i++){
         const auto& param_ext_value=param_set[i];
-        ParamVariant param_variant{get_param_id(param_ext_value.param_id),std::nullopt,std::nullopt};
+        ParamVariant param_variant{get_param_id(param_ext_value.param_id),std::nullopt,std::nullopt,std::nullopt};
         if(param_ext_value.param_type==MAV_PARAM_EXT_TYPE_INT32){
             param_variant.int_param=get_param_value_int(param_ext_value.param_value);
         }else if(param_ext_value.param_type==MAV_PARAM_EXT_TYPE_CUSTOM){
             param_variant.string_param=get_param_value_string(param_ext_value.param_value);
+        }else if(param_ext_value.param_type==MAV_PARAM_EXT_TYPE_REAL32){
+            param_variant.float_param=get_param_value_float(param_ext_value.param_value);
         }else{
             qDebug()<<"Unsupported param type:"<<(int)param_ext_value.param_type;
         }
