@@ -5,22 +5,23 @@ import OpenHD 1.0
 import "../elements"
 
 // Drone follow status overlay — centered on the HUD crosshairs.
-// The top portion of the widget overlaps the horizon center indicator, making
-// it clickable. A colour-coded status label appears just below the crosshair.
+// A colour-coded ring wraps the horizon center indicator; the status text
+// appears just below it. Tap anywhere on the widget to open the popup.
 //
-// Label states (DF_FOLLOW_ID / DF_ACTIVE_ID):
-//   followId < 0  → IDLE (amber)  — drone holds position, ignores detections
-//   followId = 0, activeId = 0  → AUTO (grey)  — no one in view
-//   followId = 0, activeId > 0  → AUTO · #N (teal) — system auto-picked N
-//   followId > 0  → #N (red)  — operator locked to person N
+// Ring / label states (DF_FOLLOW_ID / DF_ACTIVE_ID):
+//   followId < 0  → IDLE   (amber)  — drone holds position, ignores detections
+//   followId = 0, activeId = 0  → AUTO  (grey dim) — no one in view
+//   followId = 0, activeId > 0  → AUTO · #N (teal)  — system auto-picked N
+//   followId > 0  → #N    (red)   — operator locked to person N
 BaseWidget {
     id: droneFollowWidget
     width: 140
-    height: 56   // upper 32px transparent over crosshair + 24px label below
+    height: 80
 
     visible: settings.show_widgets
 
-    widgetIdentifier: "drone_follow_widget"
+    // New identifier forces a fresh default position (clears old saved bottom-left coords)
+    widgetIdentifier: "drone_follow_overlay"
     bw_verbose_name: "DRONE FOLLOW"
 
     // Centered on the HUD, overlapping the horizon crosshairs
@@ -58,9 +59,11 @@ BaseWidget {
     }
 
     // Periodic refetch: keeps DF_ACTIVE_ID and DF_AVAIL_IDS fresh in the cache.
+    // 2s is fast enough given Python's 0.5s periodic report; 1s caused constant
+    // "updating air params" popups that blocked the UI.
     Timer {
         id: outerRefetchTimer
-        interval: 1000
+        interval: 2000
         repeat: true
         running: droneFollowWidget.visible
         onTriggered: {
@@ -76,12 +79,11 @@ BaseWidget {
             if (_ohdSystemAirSettingsModel.curr_get_all_progress_perc >= 100)
                 droneFollowWidget.refreshState()
         }
-        // Fires after individual param writes — also trigger a refetch so
-        // server-side read-only state (active_id) is picked up promptly.
+        // Fires after individual param writes (operator button taps)
         function onUpdate_countChanged() {
             droneFollowWidget.refreshState()
-            if (!_ohdSystemAirSettingsModel.ui_is_busy)
-                _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
+            // NOTE: do NOT trigger a refetch here — doing so causes the system-wide
+            // "updating air params" popup on every button tap, stalling the UI.
         }
     }
 
@@ -232,31 +234,43 @@ BaseWidget {
     }
 
     // --- Crosshair overlay (closed state) ---
-    // The top 32px are transparent, sitting over the horizon center indicator
-    // so the operator can tap the crosshair to open the popup.
-    // The status label is anchored to the bottom, just below the crosshair.
+    // Transparent top portion sits over the horizon center indicator — the whole
+    // widget is the tap target. Ring at widget center = screen center. Text below.
     Item {
         id: widgetInner
         anchors.fill: parent
 
+        // Colored ring wrapping the horizon's center indicator
         Rectangle {
-            id: statusLabel
+            id: stateRing
+            width: 36
+            height: 36
+            radius: 18
+            color: "transparent"
             anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 2
-            width: labelText.contentWidth + 16
-            height: 22
-            color: followId > 0  ? "#992233"
-                 : followId < 0  ? "#7a5000"
-                 : activeId > 0  ? "#1a5f5f"
-                 : "#333333"
-            opacity: 0.85
-            radius: 11
+            anchors.verticalCenter: parent.verticalCenter
+            border.width: 2
             border.color: followId > 0  ? "#ff4466"
                         : followId < 0  ? "#ffaa00"
                         : activeId > 0  ? "#33bbbb"
                         : "#555555"
-            border.width: 1
+            opacity: (followId !== 0 || activeId > 0) ? 0.9 : 0.5
+        }
+
+        // Status text pill — just below the ring
+        Rectangle {
+            id: statusLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: stateRing.bottom
+            anchors.topMargin: 6
+            width: labelText.contentWidth + 14
+            height: 20
+            radius: 4
+            color: followId > 0  ? "#992233"
+                 : followId < 0  ? "#7a5000"
+                 : activeId > 0  ? "#1a5f5f"
+                 : "#333333"
+            opacity: 0.80
 
             Text {
                 id: labelText
