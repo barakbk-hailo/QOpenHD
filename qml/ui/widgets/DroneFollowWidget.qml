@@ -5,13 +5,17 @@ import OpenHD 1.0
 import "../elements"
 
 // Floating widget for controlling the Hailo drone follow app from the ground.
-// Short-click opens a popup listing currently tracked person IDs so the
-// operator can select a target or switch back to auto (largest) mode.
-// DF_FOLLOW_ID is set via the existing MAVLink parameter bridge which routes
-// through wifibroadcast to the hailo_follow_bridge on the air unit.
+// Short-click opens a popup letting the operator pick a tracked person, pause
+// the drone (IDLE), or return to auto mode.
+//
+// Badge states (DF_FOLLOW_ID / DF_ACTIVE_ID):
+//   followId < 0  → IDLE (amber)  — drone holds position, ignores detections
+//   followId = 0, activeId = 0  → AUTO (grey)  — no one in view
+//   followId = 0, activeId > 0  → AUTO · #N (teal) — system auto-picked N
+//   followId > 0  → #N (red)  — operator locked to person N
 BaseWidget {
     id: droneFollowWidget
-    width: 130
+    width: 140
     height: 36
 
     visible: settings.show_widgets
@@ -29,11 +33,12 @@ BaseWidget {
     hasWidgetDetail: false
     hasWidgetAction: true
     widgetActionWidth: 240
-    widgetActionHeight: 320
+    widgetActionHeight: 360
 
     // --- State read from MAVLink param cache ---
-    property int followId: 0
-    property var availIds: []
+    property int followId: 0    // DF_FOLLOW_ID: operator intent (-1=idle, 0=auto, N=locked)
+    property int activeId: 0    // DF_ACTIVE_ID: currently tracked ID (auto or locked), 0=none
+    property var availIds: []   // DF_AVAIL_IDS: IDs visible in frame
 
     function parseAvailIds(str) {
         if (!str || str.trim() === "") return []
@@ -47,15 +52,16 @@ BaseWidget {
     }
 
     function refreshState() {
-        if (_ohdSystemAirSettingsModel.param_int_exists("DF_FOLLOW_ID")) {
+        if (_ohdSystemAirSettingsModel.param_int_exists("DF_FOLLOW_ID"))
             followId = _ohdSystemAirSettingsModel.get_cached_int("DF_FOLLOW_ID")
-        }
-        if (_ohdSystemAirSettingsModel.param_string_exists("DF_AVAIL_IDS")) {
+        if (_ohdSystemAirSettingsModel.param_int_exists("DF_ACTIVE_ID"))
+            activeId = _ohdSystemAirSettingsModel.get_cached_int("DF_ACTIVE_ID")
+        if (_ohdSystemAirSettingsModel.param_string_exists("DF_AVAIL_IDS"))
             availIds = parseAvailIds(_ohdSystemAirSettingsModel.get_cached_string("DF_AVAIL_IDS"))
-        }
     }
 
-    // Auto-refresh whenever any param in the model is updated
+    // Auto-refresh whenever an individual param is written (e.g. after the
+    // operator taps a button and the round-trip completes)
     Connections {
         target: _ohdSystemAirSettingsModel
         function onUpdate_countChanged() {
@@ -66,12 +72,12 @@ BaseWidget {
     // --- Popup (short-click) ---
     widgetActionComponent: Item {
         width: 240
-        height: 320
+        height: 360
 
-        // Periodically refresh state while the popup is open.
-        // This catches async refetch completions (try_refetch_all_parameters_async
-        // replaces the full param set without firing update_countChanged) and
-        // ensures DF_AVAIL_IDS and DF_FOLLOW_ID stay current.
+        // Periodically refresh while popup is open.
+        // try_refetch_all_parameters_async replaces the full param cache via
+        // ui_thread_replace_param_set which does NOT fire update_countChanged,
+        // so we poll here to catch completed refetches.
         Timer {
             id: popupRefreshTimer
             interval: 800
@@ -82,7 +88,6 @@ BaseWidget {
 
         onVisibleChanged: {
             if (visible) {
-                // Trigger a fresh fetch so the ID list is up-to-date
                 _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
                 droneFollowWidget.refreshState()
                 popupRefreshTimer.start()
@@ -152,21 +157,23 @@ BaseWidget {
                 }
             }
 
-            // Auto / clear button
+            // AUTO / CLEAR button
             Button {
                 width: parent.width
                 height: 38
-                text: followId <= 0 ? "✓  AUTO (LARGEST)" : "CLEAR — USE AUTO"
-                highlighted: followId <= 0
+                text: followId <= 0
+                      ? (activeId > 0 ? "\u2713  AUTO (tracking #" + activeId + ")" : "\u2713  AUTO (LARGEST)")
+                      : "CLEAR \u2014 USE AUTO"
+                highlighted: followId <= 0 && followId >= 0  // true when followId == 0
                 background: Rectangle {
-                    color: followId <= 0 ? "#226644" : "#444444"
+                    color: (followId === 0) ? "#226644" : "#444444"
                     radius: 4
                 }
                 contentItem: Text {
                     text: parent.text
                     color: "white"
                     font.pixelSize: 13
-                    font.bold: followId <= 0
+                    font.bold: followId === 0
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     style: Text.Outline
@@ -175,6 +182,32 @@ BaseWidget {
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
                     followId = 0
+                }
+            }
+
+            // IDLE / PAUSE button
+            Button {
+                width: parent.width
+                height: 38
+                text: followId < 0 ? "\u25CE  IDLE (holding position)" : "PAUSE \u2014 HOLD POSITION"
+                highlighted: followId < 0
+                background: Rectangle {
+                    color: followId < 0 ? "#7a5000" : "#444444"
+                    radius: 4
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "white"
+                    font.pixelSize: 13
+                    font.bold: followId < 0
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    style: Text.Outline
+                    styleColor: "#000000"
+                }
+                onClicked: {
+                    _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", -1)
+                    followId = -1
                 }
             }
         }
@@ -187,16 +220,25 @@ BaseWidget {
 
         Rectangle {
             anchors.fill: parent
-            color: followId > 0 ? "#992233" : "#333333"
+            color: followId > 0  ? "#992233"   // red — operator locked
+                 : followId < 0  ? "#7a5000"   // amber — IDLE
+                 : activeId > 0  ? "#1a5f5f"   // teal — auto-tracking someone
+                 : "#333333"                    // grey — no one in view
             opacity: 0.85
             radius: 4
-            border.color: followId > 0 ? "#ff4466" : "#555555"
+            border.color: followId > 0  ? "#ff4466"
+                        : followId < 0  ? "#ffaa00"
+                        : activeId > 0  ? "#33bbbb"
+                        : "#555555"
             border.width: 1
         }
 
         Text {
             anchors.centerIn: parent
-            text: followId > 0 ? "\u25CE  #" + followId : "\u25CE  AUTO"
+            text: followId > 0   ? "\u25CE  #" + followId
+                : followId < 0   ? "\u25CE  IDLE"
+                : activeId > 0   ? "\u25CE  AUTO \u00B7 #" + activeId
+                : "\u25CE  AUTO"
             color: "white"
             font.pixelSize: 13
             font.bold: true
