@@ -77,6 +77,7 @@ set(QOPENHD_SOURCE_FILES_LIST
     app/telemetry/models/fcmapmodel.cpp
     app/telemetry/models/fcmavlinkmissionitemsmodel.cpp
     app/telemetry/models/fcmavlinksystem.cpp
+    app/telemetry/models/hailodetectionmodel.cpp
     app/telemetry/models/markermodel.cpp
     app/telemetry/models/rcchannelsmodel.cpp
     app/telemetry/models/wificard.cpp

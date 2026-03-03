@@ -33,57 +33,30 @@ BaseWidget {
     widgetActionWidth: 240
     widgetActionHeight: 360
 
-    // --- State read from MAVLink param cache ---
-    property int followId: 0    // DF_FOLLOW_ID: operator intent (-1=idle, 0=auto, N=locked)
-    property int activeId: 0    // DF_ACTIVE_ID: currently tracked ID (auto or locked), 0=none
-    property var availIds: []   // DF_AVAIL_IDS: IDs visible in frame
+    // DF_FOLLOW_ID from MAVLink param cache (operator intent: -1=idle, 0=auto, N=locked)
+    property int followId: 0
 
-    function parseAvailIds(str) {
-        if (!str || str.trim() === "") return []
-        var parts = str.split(",")
-        var result = []
-        for (var i = 0; i < parts.length; i++) {
-            var n = parseInt(parts[i].trim())
-            if (!isNaN(n) && n > 0) result.push(n)
-        }
-        return result
+    // Live data from HailoDetectionModel — updated reactively via TUNNEL messages
+    property int activeId: _hailoDetectionModel.active_id
+
+    property var availIds: {
+        var det = _hailoDetectionModel.detections
+        var ids = []
+        for (var i = 0; i < det.length; i++) ids.push(det[i].id)
+        ids.sort(function(a, b) { return a - b })
+        return ids
     }
 
-    function refreshState() {
+    function refreshFollowId() {
         if (_ohdSystemAirSettingsModel.param_int_exists("DF_FOLLOW_ID"))
             followId = _ohdSystemAirSettingsModel.get_cached_int("DF_FOLLOW_ID")
-        if (_ohdSystemAirSettingsModel.param_int_exists("DF_ACTIVE_ID"))
-            activeId = _ohdSystemAirSettingsModel.get_cached_int("DF_ACTIVE_ID")
-        if (_ohdSystemAirSettingsModel.param_string_exists("DF_AVAIL_IDS"))
-            availIds = parseAvailIds(_ohdSystemAirSettingsModel.get_cached_string("DF_AVAIL_IDS"))
-    }
-
-    // Periodic refetch: keeps DF_ACTIVE_ID and DF_AVAIL_IDS fresh in the cache.
-    // 2s is fast enough given Python's 0.5s periodic report; 1s caused constant
-    // "updating air params" popups that blocked the UI.
-    Timer {
-        id: outerRefetchTimer
-        interval: 2000
-        repeat: true
-        running: droneFollowWidget.visible
-        onTriggered: {
-            if (!_ohdSystemAirSettingsModel.ui_is_busy)
-                _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
-        }
     }
 
     Connections {
         target: _ohdSystemAirSettingsModel
-        // Fires after each completed full refetch (progress reaches 100)
-        function onCurr_get_all_progress_percChanged() {
-            if (_ohdSystemAirSettingsModel.curr_get_all_progress_perc >= 100)
-                droneFollowWidget.refreshState()
-        }
         // Fires after individual param writes (operator button taps)
         function onUpdate_countChanged() {
-            droneFollowWidget.refreshState()
-            // NOTE: do NOT trigger a refetch here — doing so causes the system-wide
-            // "updating air params" popup on every button tap, stalling the UI.
+            droneFollowWidget.refreshFollowId()
         }
     }
 
@@ -92,20 +65,18 @@ BaseWidget {
         width: 240
         height: 360
 
-        // Read cached values at 800ms while popup is open
+        // Keep followId fresh while popup is open
         Timer {
             id: popupRefreshTimer
             interval: 800
             repeat: true
             running: false
-            onTriggered: droneFollowWidget.refreshState()
+            onTriggered: droneFollowWidget.refreshFollowId()
         }
 
         onVisibleChanged: {
             if (visible) {
-                if (!_ohdSystemAirSettingsModel.ui_is_busy)
-                    _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(false)
-                droneFollowWidget.refreshState()
+                droneFollowWidget.refreshFollowId()
                 popupRefreshTimer.start()
             } else {
                 popupRefreshTimer.stop()
@@ -199,7 +170,6 @@ BaseWidget {
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
                     followId = 0
-                    activeId = 0  // optimistic reset — next report provides real active ID
                     droneFollowWidget.bw_manually_close_action_popup()
                 }
             }

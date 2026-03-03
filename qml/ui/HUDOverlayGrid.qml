@@ -500,6 +500,10 @@ Item {
             id: exampleWidget
         }
 
+        DetectionOverlay {
+            id: detectionOverlay
+        }
+
         DroneFollowWidget {
             id: droneFollowWidget
         }

@@ -21,6 +21,7 @@
 #include "telemetry/MavlinkTelemetry.h"
 #include "telemetry/models/rcchannelsmodel.h"
 #include "telemetry/models/markermodel.h"
+#include "telemetry/models/hailodetectionmodel.h"
 #include "telemetry/settings/mavlinksettingsmodel.h"
 #include "telemetry/settings/wblinksettingshelper.h"
 #include "telemetry/settings/frequencyhelper.h"
@@ -422,6 +423,8 @@ int main(int argc, char *argv[]) {
     adsbVehicleManager->onStarted();
     // video - a bit special
     engine.rootContext()->setContextProperty("_decodingStatistics",&DecodingStatistcs::instance());
+
+    engine.rootContext()->setContextProperty("_hailoDetectionModel", &HailoDetectionModel::instance());
 
     // And then the main part
     engine.rootContext()->setContextProperty("_mavlinkTelemetry", &MavlinkTelemetry::instance());

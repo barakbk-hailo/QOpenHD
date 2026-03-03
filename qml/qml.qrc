@@ -33,6 +33,7 @@
         <file>ui/widgets/HomeDistanceWidget.qml</file>
         <file>ui/widgets/FlightTimeWidget.qml</file>
         <file>ui/HUDOverlayGrid.qml</file>
+        <file>ui/DetectionOverlay.qml</file>
         <file>ui/widgets/BaseWidget.qml</file>
         <file>ui/widgets/BaseWidgetForm.qml</file>
         <file>ui/widgets/FpvWidget.qml</file>
