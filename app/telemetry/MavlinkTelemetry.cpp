@@ -2,7 +2,6 @@
 
 #include "models/aohdsystem.h"
 #include "models/fcmavlinksystem.h"
-#include "models/hailodetectionmodel.h"
 
 #include "settings/mavlinksettingsmodel.h"
 #include "tutil/qopenhdmavlinkhelper.hpp"
@@ -207,9 +206,6 @@ void MavlinkTelemetry::process_mavlink_message(const mavlink_message_t& msg)
 
 void MavlinkTelemetry::process_broadcast_message_openhd_air(const mavlink_message_t &msg)
 {
-    if(HailoDetectionModel::instance().process_message(msg)){
-        return;
-    }
     if(AOHDSystem::instanceAir().process_message(msg)){
         // OHD specific message comsumed
     }else{

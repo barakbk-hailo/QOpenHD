@@ -425,6 +425,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("_decodingStatistics",&DecodingStatistcs::instance());
 
     engine.rootContext()->setContextProperty("_hailoDetectionModel", &HailoDetectionModel::instance());
+    HailoDetectionModel::instance().startReceiving();
 
     // And then the main part
     engine.rootContext()->setContextProperty("_mavlinkTelemetry", &MavlinkTelemetry::instance());
