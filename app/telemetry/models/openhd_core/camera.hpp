@@ -51,6 +51,8 @@
  // For development, camera that reads input from a file, and then re-encodes it
  // using the platform encoder
  static constexpr int X_CAM_TYPE_DEVELOPMENT_FILESRC = 4;
+ // Receive AI-processed video from Hailo detection app via UDP RTP.
+ static constexpr int X_CAM_TYPE_HAILO_AI = 5;
  // ... reserved for development / custom cameras
  
  // OpenHD supports any usb camera outputting raw video (with sw encoding).
@@ -159,6 +161,8 @@
        return "EXTERNAL_IP";
      case X_CAM_TYPE_DEVELOPMENT_FILESRC:
        return "DEV_FILESRC";
+     case X_CAM_TYPE_HAILO_AI:
+       return "HAILO_AI";
      case X_CAM_TYPE_USB_GENERIC:
        return "USB";
      case X_CAM_TYPE_USB_INFIRAY:
@@ -721,6 +725,7 @@
        CameraNameAndType{"External (DEV)", 2},
        // CameraNameAndType{"External IP (DEV)",3},
        CameraNameAndType{"DEV Filecamera", 4},
+       CameraNameAndType{"Hailo AI", X_CAM_TYPE_HAILO_AI},
    };
    ManufacturerForPlatform MANUFACTURER_DEBUG{"DEV/DEBUG", debug_cameras};
    // Secondary can only be used with USB and / or the debug cameras. CSI is not
@@ -736,7 +741,8 @@
    }
    if (platform_type == X_PLATFORM_TYPE_RPI_OLD ||
        platform_type == X_PLATFORM_TYPE_RPI_4 ||
-       platform_type == X_PLATFORM_TYPE_RPI_CM4) {
+       platform_type == X_PLATFORM_TYPE_RPI_CM4 ||
+       platform_type == X_PLATFORM_TYPE_RPI_5) {
      std::vector<CameraNameAndType> arducam_cameras{
          CameraNameAndType{"SKYMASTERHDR", 40},
          CameraNameAndType{"SKYVISIONPRO", 41},

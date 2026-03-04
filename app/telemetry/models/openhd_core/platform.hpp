@@ -15,12 +15,11 @@ static constexpr int X_PLATFORM_TYPE_X86 = 1;
 // Numbers 10..20 are reserved for rpi
 // Right now we are only interested if it is an RPI of the
 // generation RPI 4 / RPI CM4 or the generation before -
-// NOTE: RPI 5 is currently not supported due to the complete lack of suitable
-// HW acceleration
+// NOTE: RPI 5 now supported with software encoding
 static constexpr int X_PLATFORM_TYPE_RPI_OLD = 10;
 static constexpr int X_PLATFORM_TYPE_RPI_4 = 11;
 static constexpr int X_PLATFORM_TYPE_RPI_CM4 = 12;
-static constexpr int X_PLATFORM_TYPE_RPI_5 = 12;
+static constexpr int X_PLATFORM_TYPE_RPI_5 = 13;
 
 // Numbers 20..30 are reserved for rockchip
 static constexpr int X_PLATFORM_TYPE_ROCKCHIP_RK3566_RADXA_ZERO3W =
@@ -58,6 +57,8 @@ static std::string x_platform_type_to_string(int platform_type) {
         return "RPI<=3";
     case X_PLATFORM_TYPE_RPI_4:
         return "RPI 4";
+    case X_PLATFORM_TYPE_RPI_CM4:
+        return "RPI CM4";
     case X_PLATFORM_TYPE_RPI_5:
         return "RPI 5";
     // RPI END
