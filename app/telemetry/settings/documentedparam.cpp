@@ -807,7 +807,6 @@ static std::map<std::string, void *> get_whitelisted_params()
     //
     ret["WB_V_FEC_PERC"]=nullptr;
     ret["WB_V_RATE_PERC"]=nullptr;
-    ret["VARIABLE_BITRATE"]=nullptr;
     //
     ret["TYPE_CAM0"]=nullptr;
     ret["TYPE_CAM1"]=nullptr;
