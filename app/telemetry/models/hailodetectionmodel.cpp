@@ -48,66 +48,31 @@ void HailoDetectionModel::startReceiving()
 void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 {
     // v3 header: version(1) + active_id(2) + follow_id(2) + count(1) = 6 bytes
-    // v2 header: version(1) + active_id(2) + count(1) = 4 bytes
-    if (len < 4) return;
+    // Per bbox: id(2) + cx(2) + cy(2) + w(2) + h(2) + flags(1) = 11 bytes
+    if (len < 6) return;
+
+    const uint8_t version = data[0];
+    if (version < 3) return;  // only v3+ supported
 
     m_last_data_ms = QOpenHDMavlinkHelper::getTimeMilliseconds();
 
-    const uint8_t  version = data[0];
-    const uint16_t active  = read_u16_le(data + 1);
+    const uint16_t active = read_u16_le(data + 1);
+    const int16_t  follow = static_cast<int16_t>(read_u16_le(data + 3));
+    const uint8_t  count  = data[5];
 
-    int16_t follow = 0;
-    uint8_t count;
-    unsigned header_size;
-    if (version >= 3 && len >= 6) {
-        follow = static_cast<int16_t>(read_u16_le(data + 3));
-        count = data[5];
-        header_size = 6u;
-    } else if (version >= 2) {
-        count = data[3];
-        header_size = 4u;
-    } else {
-        count = data[3];
-        header_size = 3u;
-    }
-
-    // v2+: 11 bytes per bbox (id=2, cx=2, cy=2, w=2, h=2, flags=1)
-    const unsigned entry_size = (version >= 2) ? 11u : 10u;
-
-    if (len < header_size + count * entry_size) return;  // truncated
+    if (len < 6u + count * 11u) return;  // truncated
 
     QVariantList list;
     list.reserve(count);
     for (uint8_t i = 0; i < count; ++i) {
-        const uint8_t* b = data + header_size + i * entry_size;
-        uint16_t id;
-        uint16_t cx_raw, cy_raw, w_raw, h_raw;
-        uint8_t  flags;
-
-        if (version >= 2) {
-            id     = read_u16_le(b);
-            cx_raw = read_u16_le(b + 2);
-            cy_raw = read_u16_le(b + 4);
-            w_raw  = read_u16_le(b + 6);
-            h_raw  = read_u16_le(b + 8);
-            flags  = b[10];
-        } else {
-            // v1 compat: id=uint8, 10 bytes per entry, 3-byte header
-            id     = b[0];
-            cx_raw = read_u16_le(b + 1);
-            cy_raw = read_u16_le(b + 3);
-            w_raw  = read_u16_le(b + 5);
-            h_raw  = read_u16_le(b + 7);
-            flags  = b[9];
-        }
-
+        const uint8_t* b = data + 6 + i * 11;
         QVariantMap det;
-        det["id"]      = static_cast<int>(id);
-        det["cx"]      = cx_raw / 65535.0;
-        det["cy"]      = cy_raw / 65535.0;
-        det["w"]       = w_raw  / 65535.0;
-        det["h"]       = h_raw  / 65535.0;
-        det["tracked"] = (flags & 0x01) != 0;
+        det["id"]      = static_cast<int>(read_u16_le(b));
+        det["cx"]      = read_u16_le(b + 2) / 65535.0;
+        det["cy"]      = read_u16_le(b + 4) / 65535.0;
+        det["w"]       = read_u16_le(b + 6) / 65535.0;
+        det["h"]       = read_u16_le(b + 8) / 65535.0;
+        det["tracked"] = (b[10] & 0x01) != 0;
         list.append(det);
     }
 

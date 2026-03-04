@@ -16,14 +16,11 @@ class UDPReceiver;
  * via a dedicated wifibroadcast stream (forwarded to localhost:5520 on ground)
  * and exposes it to QML.
  *
- * Binary payload format v3 (v2 compatible):
- *   Byte 0:      version (2 or 3)
+ * Binary payload format v3:
+ *   Byte 0:      version = 3
  *   Byte 1-2:    active_id (uint16 LE, 0=none)
- *   v3 only:
- *     Byte 3-4:  follow_id (int16 LE, -1=idle, 0=auto, N=locked)
- *     Byte 5:    count (uint8)
- *   v2:
- *     Byte 3:    count (uint8)
+ *   Byte 3-4:    follow_id (int16 LE, -1=idle, 0=auto, N=locked)
+ *   Byte 5:      count (uint8)
  *   Per bbox — 11 bytes:
  *     [0-1]  id     uint16 LE
  *     [2-3]  cx     uint16 LE  (0=0.0, 65535=1.0, normalized)
