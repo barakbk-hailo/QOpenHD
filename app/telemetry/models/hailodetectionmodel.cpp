@@ -47,18 +47,32 @@ void HailoDetectionModel::startReceiving()
 
 void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 {
-    // v2 header: version(1) + active_id(2 LE) + count(1) = 4 bytes
+    // v3 header: version(1) + active_id(2) + follow_id(2) + count(1) = 6 bytes
+    // v2 header: version(1) + active_id(2) + count(1) = 4 bytes
     if (len < 4) return;
 
     m_last_data_ms = QOpenHDMavlinkHelper::getTimeMilliseconds();
 
     const uint8_t  version = data[0];
     const uint16_t active  = read_u16_le(data + 1);
-    const uint8_t  count   = data[3];
 
-    // v2: 11 bytes per bbox (id=2, cx=2, cy=2, w=2, h=2, flags=1)
+    int16_t follow = 0;
+    uint8_t count;
+    unsigned header_size;
+    if (version >= 3 && len >= 6) {
+        follow = static_cast<int16_t>(read_u16_le(data + 3));
+        count = data[5];
+        header_size = 6u;
+    } else if (version >= 2) {
+        count = data[3];
+        header_size = 4u;
+    } else {
+        count = data[3];
+        header_size = 3u;
+    }
+
+    // v2+: 11 bytes per bbox (id=2, cx=2, cy=2, w=2, h=2, flags=1)
     const unsigned entry_size = (version >= 2) ? 11u : 10u;
-    const unsigned header_size = (version >= 2) ? 4u : 3u;
 
     if (len < header_size + count * entry_size) return;  // truncated
 
@@ -98,6 +112,7 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
     }
 
     set_active_id(static_cast<int>(active));
+    set_follow_id(static_cast<int>(follow));
     set_detections(list);
 }
 

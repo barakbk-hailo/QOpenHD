@@ -33,10 +33,8 @@ BaseWidget {
     widgetActionWidth: 240
     widgetActionHeight: 360
 
-    // DF_FOLLOW_ID from MAVLink param cache (operator intent: -1=idle, 0=auto, N=locked)
-    property int followId: 0
-
-    // Live data from HailoDetectionModel — updated reactively via TUNNEL messages
+    // Live data from HailoDetectionModel — streamed at 10Hz via binary detection payload
+    property int followId: _hailoDetectionModel.follow_id
     property int activeId: _hailoDetectionModel.active_id
 
     property var availIds: {
@@ -47,41 +45,10 @@ BaseWidget {
         return ids
     }
 
-    function refreshFollowId() {
-        if (_ohdSystemAirSettingsModel.param_int_exists("DF_FOLLOW_ID"))
-            followId = _ohdSystemAirSettingsModel.get_cached_int("DF_FOLLOW_ID")
-    }
-
-    Connections {
-        target: _ohdSystemAirSettingsModel
-        // Fires after individual param writes (operator button taps)
-        function onUpdate_countChanged() {
-            droneFollowWidget.refreshFollowId()
-        }
-    }
-
     // --- Popup (short-click) ---
     widgetActionComponent: Item {
         width: 240
         height: 360
-
-        // Keep followId fresh while popup is open
-        Timer {
-            id: popupRefreshTimer
-            interval: 800
-            repeat: true
-            running: false
-            onTriggered: droneFollowWidget.refreshFollowId()
-        }
-
-        onVisibleChanged: {
-            if (visible) {
-                droneFollowWidget.refreshFollowId()
-                popupRefreshTimer.start()
-            } else {
-                popupRefreshTimer.stop()
-            }
-        }
 
         Column {
             anchors.fill: parent
@@ -139,7 +106,6 @@ BaseWidget {
                     }
                     onClicked: {
                         _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", modelData)
-                        followId = modelData
                         droneFollowWidget.bw_manually_close_action_popup()
                     }
                 }
@@ -169,7 +135,6 @@ BaseWidget {
                 }
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
-                    followId = 0
                     droneFollowWidget.bw_manually_close_action_popup()
                 }
             }
@@ -196,7 +161,6 @@ BaseWidget {
                 }
                 onClicked: {
                     _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", -1)
-                    followId = -1
                     droneFollowWidget.bw_manually_close_action_popup()
                 }
             }
