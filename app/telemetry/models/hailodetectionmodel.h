@@ -3,6 +3,8 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <QTimer>
+#include <atomic>
 #include <memory>
 
 #include "util/lqutils_include.h"
@@ -44,10 +46,14 @@ public:
 
     L_RO_PROP(int, active_id, set_active_id, 0)
     L_RO_PROP(QVariantList, detections, set_detections, {})
+    L_RO_PROP(bool, receiving, set_receiving, false)
 
 private:
     void on_udp_data(const uint8_t* data, size_t len);
+    void update_receiving();
     std::unique_ptr<UDPReceiver> m_udp_receiver;
+    std::atomic<int64_t> m_last_data_ms{-1};
+    std::unique_ptr<QTimer> m_receiving_timer;
 };
 
 #endif // HAILODETECTIONMODEL_H

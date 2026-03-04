@@ -15,6 +15,7 @@ import OpenHD 1.0
 Item {
     id: root
     anchors.fill: parent
+    visible: _hailoDetectionModel.receiving
 
     // -------------------------------------------------------------------------
     // Parse native video resolution from _decodingStatistics.primary_stream_frame_format

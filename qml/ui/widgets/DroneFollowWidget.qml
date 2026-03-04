@@ -18,7 +18,7 @@ BaseWidget {
     width: 140
     height: 80
 
-    visible: settings.show_widgets
+    visible: settings.show_widgets && _hailoDetectionModel.receiving
 
     // New identifier forces a fresh default position (clears old saved bottom-left coords)
     widgetIdentifier: "drone_follow_overlay"

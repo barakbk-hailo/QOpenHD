@@ -3,6 +3,7 @@
 #include <QDebug>
 
 #include "../../videostreaming/vscommon/udp/UDPReceiver.h"
+#include "tutil/qopenhdmavlinkhelper.hpp"
 
 static uint16_t read_u16_le(const uint8_t* p) {
     return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
@@ -11,6 +12,10 @@ static uint16_t read_u16_le(const uint8_t* p) {
 HailoDetectionModel::HailoDetectionModel(QObject* parent)
     : QObject(parent)
 {
+    m_receiving_timer = std::make_unique<QTimer>(this);
+    QObject::connect(m_receiving_timer.get(), &QTimer::timeout,
+                     this, &HailoDetectionModel::update_receiving);
+    m_receiving_timer->start(1000);
 }
 
 HailoDetectionModel::~HailoDetectionModel()
@@ -44,6 +49,8 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 {
     // v2 header: version(1) + active_id(2 LE) + count(1) = 4 bytes
     if (len < 4) return;
+
+    m_last_data_ms = QOpenHDMavlinkHelper::getTimeMilliseconds();
 
     const uint8_t  version = data[0];
     const uint16_t active  = read_u16_le(data + 1);
@@ -92,4 +99,15 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 
     set_active_id(static_cast<int>(active));
     set_detections(list);
+}
+
+void HailoDetectionModel::update_receiving()
+{
+    const int64_t last = m_last_data_ms.load();
+    if (last <= -1) {
+        set_receiving(false);
+        return;
+    }
+    const auto elapsed_ms = QOpenHDMavlinkHelper::getTimeMilliseconds() - last;
+    set_receiving(elapsed_ms < 2000);
 }
