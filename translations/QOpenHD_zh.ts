@@ -722,12 +722,22 @@
 <context>
     <name>FooterRebootShutdownWarning</name>
     <message>
-        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="65"/>
+        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="68"/>
         <source>REBOOT</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="74"/>
+        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="81"/>
+        <source>Compass calibration requested</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="83"/>
+        <source>Compass calibration failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../qml/ui/configpopup/status/FooterRebootShutdownWarning.qml" line="91"/>
         <source>SHUTDOWN</source>
         <translation type="unfinished"></translation>
     </message>

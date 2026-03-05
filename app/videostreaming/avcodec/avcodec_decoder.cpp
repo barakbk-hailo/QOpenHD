@@ -518,22 +518,25 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
         qDebug()<<"H264 decode";
         qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
         if(!stream_config.enable_software_video_decoder){
-            // weird workaround needed for pi + DRM_PRIME
-            /*if ((decoder = avcodec_find_decoder_by_name("h264_v4l2m2m")) == NULL) {
-                fprintf(stderr, "Cannot find the h264 v4l2m2m decoder\n");
-                avformat_close_input(&input_ctx);
-                return -1;
-            }*/
             auto tmp = avcodec_find_decoder_by_name("h264_mmal");
             if(tmp!=nullptr){
                 decoder = tmp;
-                 wanted_hw_pix_fmt = AV_PIX_FMT_MMAL;
+                wanted_hw_pix_fmt = AV_PIX_FMT_MMAL;
+                qDebug()<<"Using h264_mmal HW decoder";
             }else{
-                wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+                // MMAL not available (e.g. RPi4/5 on arm64 Trixie) - try V4L2 M2M
+                auto v4l2 = avcodec_find_decoder_by_name("h264_v4l2m2m");
+                if(v4l2!=nullptr){
+                    decoder = v4l2;
+                    wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
+                    qDebug()<<"Using h264_v4l2m2m HW decoder";
+                }else{
+                    wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+                    qDebug()<<"No HW H264 decoder found, using SW decode";
+                }
             }
         }else{
             wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
-            //wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
         }
     }
     else if(decoder->id==AV_CODEC_ID_H265){
@@ -610,9 +613,36 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
     decoder_ctx->thread_count = 1;
 
    if ((ret = avcodec_open2(decoder_ctx, decoder, nullptr)) < 0) {
-        qDebug()<<"Failed to open codec for stream ";//<< video_stream;
-        avformat_close_input(&input_ctx);
-        return -1;
+        qDebug()<<"Failed to open codec for stream, trying SW fallback";
+        // HW decoder (e.g. h264_v4l2m2m on RPi5) may fail at open time
+        // Fall back to SW decode
+        avcodec_free_context(&decoder_ctx);
+        decoder = avcodec_find_decoder(video->codecpar->codec_id);
+        if(!decoder){
+            qDebug()<<"Cannot find any decoder for codec";
+            avformat_close_input(&input_ctx);
+            return -1;
+        }
+        decoder_ctx = avcodec_alloc_context3(decoder);
+        if(!decoder_ctx){
+            avformat_close_input(&input_ctx);
+            return -1;
+        }
+        decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+        decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+        decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+        avcodec_parameters_to_context(decoder_ctx, video->codecpar);
+        wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+        decoder_ctx->get_format = get_sw_format;
+        decoder_ctx->thread_count = 1;
+        selected_decoding_type="SW(HW open failed)";
+        if ((ret = avcodec_open2(decoder_ctx, decoder, nullptr)) < 0) {
+            qDebug()<<"SW fallback also failed to open codec";
+            avcodec_free_context(&decoder_ctx);
+            avformat_close_input(&input_ctx);
+            return -1;
+        }
+        qDebug()<<"SW fallback decoder opened successfully";
     }
     AVPacket packet;
     // actual decoding and dump the raw data
@@ -718,8 +748,19 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
                  decoder = tmp;
                  wanted_hw_pix_fmt = AV_PIX_FMT_MMAL;
                  use_pi_hw_decode=true;
+                 qDebug()<<"Using h264_mmal HW decoder";
              }else{
-                 wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+                 // MMAL not available (e.g. RPi4/5 on arm64 Trixie) - try V4L2 M2M
+                 auto v4l2 = avcodec_find_decoder_by_name("h264_v4l2m2m");
+                 if(v4l2!=nullptr){
+                     decoder = v4l2;
+                     wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
+                     use_pi_hw_decode=true;
+                     qDebug()<<"Using h264_v4l2m2m HW decoder";
+                 }else{
+                     wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+                     qDebug()<<"No HW H264 decoder found, using SW decode";
+                 }
              }
          }else{
              wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
@@ -770,9 +811,32 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
     // ---------------------------------------
 
      if (avcodec_open2(decoder_ctx, decoder, NULL) < 0) {
-         fprintf(stderr, "Could not open codec\n");
+         qDebug()<<"Could not open codec, trying SW fallback";
+         // HW decoder (e.g. h264_v4l2m2m on RPi5) may fail at open time
          avcodec_free_context(&decoder_ctx);
-         return;
+         if(stream_config.video_codec==QOpenHDVideoHelper::VideoCodecH264){
+             decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
+         }else{
+             decoder = avcodec_find_decoder(AV_CODEC_ID_H265);
+         }
+         if(!decoder){
+             qDebug()<<"Cannot find any SW decoder";
+             return;
+         }
+         decoder_ctx = avcodec_alloc_context3(decoder);
+         if(!decoder_ctx) return;
+         decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+         decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+         decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+         wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+         decoder_ctx->thread_count = 1;
+         selected_decoding_type="SW(HW open failed)";
+         if (avcodec_open2(decoder_ctx, decoder, NULL) < 0) {
+             qDebug()<<"SW fallback also failed";
+             avcodec_free_context(&decoder_ctx);
+             return;
+         }
+         qDebug()<<"SW fallback decoder opened successfully";
      }
      qDebug()<<"AVCodecDecoder::open_and_decode_until_error_custom_rtp()-begin loop";
 #ifdef HACK_RAW
