@@ -183,10 +183,30 @@ int AVCodecDecoder::decode_and_wait_for_frame(AVPacket *packet,std::optional<std
     timestamp_add_fed(packet->pts);
 
     //m_ffmpeg_dequeue_or_queue_mutex.lock();
-    const int ret_avcodec_send_packet = avcodec_send_packet(decoder_ctx, packet);
+    int ret_avcodec_send_packet = avcodec_send_packet(decoder_ctx, packet);
     //m_ffmpeg_dequeue_or_queue_mutex.unlock();
+    if (ret_avcodec_send_packet == AVERROR(EAGAIN)) {
+        // Decoder has output frames that must be consumed before accepting new input.
+        // Drain all available decoded frames first, then retry sending the packet.
+        AVFrame *drain_frame = av_frame_alloc();
+        if(drain_frame){
+            while(true){
+                int drain_ret = avcodec_receive_frame(decoder_ctx, drain_frame);
+                if(drain_ret == 0){
+                    drain_frame->pts = beforeFeedFrameUs;
+                    on_new_frame(drain_frame);
+                    av_frame_unref(drain_frame);
+                }else{
+                    break;
+                }
+            }
+            av_frame_free(&drain_frame);
+        }
+        // Retry sending the packet after draining output
+        ret_avcodec_send_packet = avcodec_send_packet(decoder_ctx, packet);
+    }
     if (ret_avcodec_send_packet < 0) {
-        fprintf(stderr, "Error during decoding\n");
+        fprintf(stderr, "Error during decoding (avcodec_send_packet returned %d)\n", ret_avcodec_send_packet);
         return ret_avcodec_send_packet;
     }
     // alloc output frame(s)

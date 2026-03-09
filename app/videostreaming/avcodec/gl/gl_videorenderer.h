@@ -69,6 +69,8 @@ class GL_VideoRenderer {
   void update_texture_cuda(AVFrame* frame);
   void update_texture_yuv420P_yuv422P(AVFrame* frame);
   void update_texture_vdpau(AVFrame* frame);
+  // Set to true if EGL external texture path fails, to avoid retrying every frame
+  bool m_egl_external_failed = false;
 #ifdef X_HAS_LIB_CUDA
   std::unique_ptr<CUDAGLInteropHelper> m_cuda_gl_interop_helper=nullptr;
 #endif

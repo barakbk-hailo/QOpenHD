@@ -243,11 +243,20 @@ bool GL_VideoRenderer::update_texture_egl_external(AVFrame* frame) {
   if(egl_frame_texture.texture==0){
 	glGenTextures(1, &egl_frame_texture.texture);
   }
-  glEnable(GL_TEXTURE_EXTERNAL_OES);
+  // NOTE: Do NOT call glEnable(GL_TEXTURE_EXTERNAL_OES) - it is invalid in GLES 2.0+
+  // and causes GL_INVALID_ENUM on Mesa/V3D drivers.
   glBindTexture(GL_TEXTURE_EXTERNAL_OES, egl_frame_texture.texture);
   glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
+  // Check for GL errors after binding EGL image to texture
+  GLenum gl_err = glGetError();
+  if (gl_err != GL_NO_ERROR) {
+	printf("GL error after glEGLImageTargetTexture2DOES: 0x%x\n", gl_err);
+	eglDestroyImageKHR(egl_display, image);
+	egl_frame_texture.has_valid_image = false;
+	return false;
+  }
   // I do not know exactly how that works, but we seem to be able to immediately delete the EGL image, as long as we don't give the frame
   // back to the decoder I assume
   eglDestroyImageKHR(egl_display, image);
@@ -286,7 +295,28 @@ void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
   curr_video_height=frame->height;
   if(frame->format == AV_PIX_FMT_DRM_PRIME){
     //std::cout<<"update_texture_drm_prime\n";
-	update_texture_egl_external(frame);
+	if(!m_egl_external_failed){
+	  bool ok = update_texture_egl_external(frame);
+	  if(!ok){
+		std::cerr<<"EGL external texture failed, falling back to YUV420P transfer\n";
+		m_egl_external_failed = true;
+		// Fall through to the fallback below
+	  }
+	}
+	if(m_egl_external_failed){
+	  // Fallback: transfer DRM_PRIME frame to YUV420P via CPU copy
+	  AVFrame* sw_frame = av_frame_alloc();
+	  if(sw_frame){
+		sw_frame->format = AV_PIX_FMT_YUV420P;
+		if(av_hwframe_transfer_data(sw_frame, frame, 0) == 0){
+		  update_texture_yuv420P_yuv422P(sw_frame);
+		} else {
+		  std::cerr<<"Failed to transfer DRM_PRIME frame to YUV420P\n";
+		  av_frame_free(&sw_frame);
+		}
+	  }
+	  av_frame_free(&frame);
+	}
   }else if(frame->format==AV_PIX_FMT_CUDA){
     //std::cout<<"update_texture_CUDA\n";
 	update_texture_cuda(frame);
