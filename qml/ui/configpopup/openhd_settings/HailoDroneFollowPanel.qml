@@ -7,12 +7,16 @@ import OpenHD 1.0
 import "../../elements"
 
 /*
- * Dedicated settings panel for Hailo Drone-Follow parameters.
+ * Dynamic settings panel for Hailo Drone-Follow parameters.
  *
- * All parameters live in the air unit's generic MAVLink param set
- * (_ohdSystemAirSettingsModel) under the "DF_" prefix.
+ * Reads df_params.json from the local filesystem to discover what params
+ * exist and their metadata (label, type, min/max/step, group, description).
+ * The actual param values come from _ohdSystemAirSettingsModel via MAVLink.
  *
- * FLOAT params are scaled ×100 in the MAVLink transport (e.g. kp_yaw 5.0
+ * If df_params.json is not found, a fallback message is shown directing
+ * the user to place the file.
+ *
+ * FLOAT params are scaled x100 in the MAVLink transport (e.g. kp_yaw 5.0
  * is stored as 500). The sliders show the real-world value; we
  * multiply/divide by 100 at the read/write boundary.
  */
@@ -24,59 +28,61 @@ Rectangle {
 
     property int rowHeight: 56
 
-    // Track model updates — incrementing this forces all currentValue bindings to re-evaluate
+    // Track model updates - forces currentValue bindings to re-evaluate
     property int _uc: _ohdSystemAirSettingsModel.update_count
 
     // ── availability guard ──────────────────────────────────────────────
     property bool airAlive: _ohdSystemAir.is_alive
     property bool paramsReady: _ohdSystemAirSettingsModel.has_params_fetched
-    // Hailo params exist if DF_KP_YAW is present in the param set
-    property bool hailoAvailable: paramsReady && _ohdSystemAirSettingsModel.param_int_exists("DF_KP_YAW")
+
+    // ── schema data ─────────────────────────────────────────────────────
+    property var schema: null           // parsed JSON object
+    property var groupList: []          // sorted array of {id, label}
+    property var paramsByGroup: ({})    // group_id -> [param, ...]
+    property bool schemaLoaded: false
+    property string schemaError: ""
+
+    // Whether any DF_ param exists in the air model
+    property bool hailoAvailable: {
+        if (!paramsReady || !schemaLoaded) return false;
+        // Check if at least one schema param exists in the model
+        var params = schema ? schema.params : [];
+        for (var i = 0; i < params.length; ++i) {
+            if (_ohdSystemAirSettingsModel.param_int_exists(params[i].mavlink_id))
+                return true;
+        }
+        return false;
+    }
 
     // ── parameter queue ────────────────────────────────────────────────
-    // MavlinkSettingsModel.try_set_param_int_async() drops the call if
-    // m_is_currently_busy is true (prints "BUSY" and reports failure).
-    // Each set can be busy for up to 300 ms × 10 retries = 3 s, so
-    // changing multiple sliders quickly causes silent drops.
-    //
-    // We queue pending changes and drain one-at-a-time when ui_is_busy
-    // goes back to false.  If the same paramId is already in the queue,
-    // we update its value in-place (only the latest matters).
-    property var _paramQueue: []   // array of {paramId, value}
+    property var _paramQueue: []
 
     function _enqueueParam(paramId, value) {
-        // Coalesce: replace existing entry for same paramId
         for (var i = 0; i < _paramQueue.length; ++i) {
             if (_paramQueue[i].paramId === paramId) {
                 _paramQueue[i].value = value;
-                _paramQueue = _paramQueue; // trigger change signal
+                _paramQueue = _paramQueue;
                 return;
             }
         }
         _paramQueue.push({paramId: paramId, value: value});
-        _paramQueue = _paramQueue; // trigger change signal
+        _paramQueue = _paramQueue;
     }
 
     function _drainQueue() {
         if (_paramQueue.length === 0) return;
         if (_ohdSystemAirSettingsModel.ui_is_busy) return;
         var item = _paramQueue.shift();
-        _paramQueue = _paramQueue; // trigger change signal
+        _paramQueue = _paramQueue;
         _ohdSystemAirSettingsModel.try_set_param_int_async(item.paramId, item.value, true);
     }
 
-    // Watch the busy flag — when it clears, send the next queued item
     property bool _modelBusy: _ohdSystemAirSettingsModel.ui_is_busy
     on_ModelBusyChanged: {
         if (!_modelBusy) _drainQueue();
     }
 
-    // Track how long the model has been stuck busy
     property int _busyTicks: 0
-
-    // Safety timer: poke the queue every 500ms in case a signal was missed.
-    // Also detect permanently-stuck busy state (>5s = likely deadlocked)
-    // and force-drain by calling try_set_param_int_async anyway.
     Timer {
         id: queueTimer
         interval: 500
@@ -86,14 +92,13 @@ Rectangle {
             if (_ohdSystemAirSettingsModel.ui_is_busy) {
                 root._busyTicks++;
                 if (root._busyTicks >= 10) {
-                    // Busy for 5+ seconds — likely permanently stuck.
-                    // Force-send the next item anyway
-                    console.log("DroneFollow: busy stuck for 5s, force-draining queue");
+                    console.log("DroneFollow: busy stuck for 5s, force-draining");
                     root._busyTicks = 0;
                     if (_paramQueue.length > 0) {
                         var item = _paramQueue.shift();
                         _paramQueue = _paramQueue;
-                        _ohdSystemAirSettingsModel.try_set_param_int_async(item.paramId, item.value, true);
+                        _ohdSystemAirSettingsModel.try_set_param_int_async(
+                            item.paramId, item.value, true);
                     }
                 }
             } else {
@@ -106,17 +111,18 @@ Rectangle {
     // ── helpers ─────────────────────────────────────────────────────────
     function getFloat(paramId) {
         if (!hailoAvailable) return 0;
+        if (!_ohdSystemAirSettingsModel.param_int_exists(paramId)) return 0;
         return _ohdSystemAirSettingsModel.get_cached_int(paramId) / 100.0;
     }
     function setFloat(paramId, realValue) {
         if (!hailoAvailable) return;
         var intVal = Math.round(realValue * 100);
-        // Always go through queue to avoid BUSY drops and permanent-stuck issues
         _enqueueParam(paramId, intVal);
         _drainQueue();
     }
     function getInt(paramId) {
         if (!hailoAvailable) return 0;
+        if (!_ohdSystemAirSettingsModel.param_int_exists(paramId)) return 0;
         return _ohdSystemAirSettingsModel.get_cached_int(paramId);
     }
     function setInt(paramId, value) {
@@ -126,6 +132,7 @@ Rectangle {
     }
     function getBool(paramId) {
         if (!hailoAvailable) return false;
+        if (!_ohdSystemAirSettingsModel.param_int_exists(paramId)) return false;
         return _ohdSystemAirSettingsModel.get_cached_int(paramId) !== 0;
     }
     function setBool(paramId, checked) {
@@ -135,12 +142,90 @@ Rectangle {
         _drainQueue();
     }
 
+    // ── load schema at startup ──────────────────────────────────────────
+    Component.onCompleted: loadSchema()
+
+    function loadSchema() {
+        var paths = [
+            "file:///usr/local/share/openhd/df_params.json",
+            "file:///home/pi/hailo-drone-follow/df_params.json"
+        ];
+        for (var i = 0; i < paths.length; ++i) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", paths[i], false);  // synchronous
+            try {
+                xhr.send();
+            } catch (e) {
+                continue;
+            }
+            if ((xhr.status === 200 || xhr.status === 0) && xhr.responseText.length > 10) {
+                try {
+                    var parsed = JSON.parse(xhr.responseText);
+                    if (parsed && parsed.params && parsed.params.length > 0) {
+                        buildSchema(parsed);
+                        console.log("DroneFollow: loaded schema from " + paths[i] +
+                                    " (" + parsed.params.length + " params)");
+                        return;
+                    }
+                } catch (e2) {
+                    schemaError = "Failed to parse df_params.json: " + e2;
+                    console.warn("DroneFollow: " + schemaError);
+                }
+            }
+        }
+        schemaError = "df_params.json not found";
+        console.warn("DroneFollow: " + schemaError);
+    }
+
+    function buildSchema(parsed) {
+        schema = parsed;
+
+        // Build sorted group list
+        var groups = parsed.groups || [];
+        groups.sort(function(a, b) { return (a.order || 0) - (b.order || 0); });
+        var gl = [];
+        var pbg = {};
+        for (var g = 0; g < groups.length; ++g) {
+            gl.push({id: groups[g].id, label: groups[g].label});
+            pbg[groups[g].id] = [];
+        }
+
+        // Distribute params into groups
+        var params = parsed.params || [];
+        for (var p = 0; p < params.length; ++p) {
+            var param = params[p];
+            var gid = param.group || "other";
+            if (!pbg[gid]) {
+                gl.push({id: gid, label: gid.toUpperCase()});
+                pbg[gid] = [];
+            }
+            pbg[gid].push(param);
+        }
+
+        // Sort params within each group
+        for (var key in pbg) {
+            pbg[key].sort(function(a, b) { return (a.order || 0) - (b.order || 0); });
+        }
+
+        // Remove empty groups
+        var finalGl = [];
+        for (var gi = 0; gi < gl.length; ++gi) {
+            if (pbg[gl[gi].id] && pbg[gl[gi].id].length > 0) {
+                finalGl.push(gl[gi]);
+            }
+        }
+
+        groupList = finalGl;
+        paramsByGroup = pbg;
+        schemaLoaded = true;
+    }
+
     // ── "not available" overlay ─────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
         color: "#cc111122"
         z: 10
-        visible: !airAlive || !hailoAvailable
+        visible: !airAlive || (!hailoAvailable && schemaLoaded)
 
         Column {
             anchors.centerIn: parent
@@ -165,6 +250,42 @@ Rectangle {
                 text: !airAlive
                       ? "Connect the air unit to configure drone-follow parameters."
                       : "Start 'drone-follow' on the air unit and restart OpenHD,\nor ensure the camera type is set to HAILO_AI."
+                color: "#888888"
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
+    }
+
+    // ── "schema not found" overlay ──────────────────────────────────────
+    Rectangle {
+        anchors.fill: parent
+        color: "#cc111122"
+        z: 10
+        visible: !schemaLoaded && airAlive
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 12
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "\uf15c"
+                font.family: "Font Awesome 5 Free"
+                font.pixelSize: 48
+                color: "#ff8844"
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "df_params.json not found"
+                color: "#cccccc"
+                font.pixelSize: 16
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Place df_params.json in one of:\n" +
+                      "  /usr/local/share/openhd/df_params.json\n" +
+                      "  /home/pi/hailo-drone-follow/df_params.json\n\n" +
+                      "This file is provided by the drone-follow package."
                 color: "#888888"
                 font.pixelSize: 13
                 horizontalAlignment: Text.AlignHCenter
@@ -204,7 +325,6 @@ Rectangle {
                 text: "Tune follow-me PID gains and behaviour"
                 color: "#888888"
                 font.pixelSize: 12
-                bottomPadding: 4
             }
 
             // ── Queue / busy status ─────────────────────────────────────
@@ -213,15 +333,15 @@ Rectangle {
                 width: statusRow.width + 20
                 height: statusRow.height + 8
                 radius: 10
-                color: root._modelBusy ? "#33ff8800" : (_paramQueue.length > 0 ? "#33ffcc00" : "transparent")
+                color: root._modelBusy
+                       ? "#33ff8800"
+                       : (_paramQueue.length > 0 ? "#33ffcc00" : "transparent")
                 visible: root._modelBusy || _paramQueue.length > 0
 
                 Row {
                     id: statusRow
                     anchors.centerIn: parent
                     spacing: 8
-
-                    // Spinning indicator
                     Text {
                         text: "\u25cf"
                         color: root._modelBusy ? "#ff8800" : "#ffcc00"
@@ -233,10 +353,11 @@ Rectangle {
                             NumberAnimation { to: 1.0; duration: 400 }
                         }
                     }
-
                     Text {
                         text: root._modelBusy
-                              ? "Sending…" + (_paramQueue.length > 0 ? " (" + _paramQueue.length + " queued)" : "")
+                              ? "Sending\u2026"
+                                + (_paramQueue.length > 0
+                                   ? " (" + _paramQueue.length + " queued)" : "")
                               : _paramQueue.length + " queued"
                         color: "#bbbbbb"
                         font.pixelSize: 11
@@ -244,158 +365,69 @@ Rectangle {
                 }
             }
 
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Yaw Control
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "YAW CONTROL" }
-
-            ParamSlider {
-                paramId: "DF_KP_YAW"
-                label: "Yaw P-gain"
-                description: "Proportional gain for yaw rotation towards the target"
-                isFloat: true
-                minVal: 0; maxVal: 20; stepVal: 0.1
+            // ── Schema version ──────────────────────────────────────────
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: schemaLoaded
+                      ? (schema.params.length + " params from df_params.json v"
+                         + (schema.version || "?"))
+                      : ""
+                color: "#555555"
+                font.pixelSize: 10
+                visible: schemaLoaded
             }
 
-            ParamSlider {
-                paramId: "DF_YAW_ALPHA"
-                label: "Yaw smoothing (α)"
-                description: "Low-pass filter coefficient — lower = smoother"
-                isFloat: true
-                minVal: 0.01; maxVal: 1.0; stepVal: 0.01
-            }
+            Item { width: 1; height: 8 }
 
-            ParamSwitch {
-                paramId: "DF_SMTH_YAW"
-                label: "Smooth yaw"
-                description: "Enable exponential smoothing on yaw commands"
-            }
+            // ── Dynamic sections ────────────────────────────────────────
+            Repeater {
+                model: root.groupList
 
-            ParamSwitch {
-                paramId: "DF_YAW_ONLY"
-                label: "Yaw only (no forward)"
-                description: "Rotate towards the target but do not move forward/backward"
-            }
+                Column {
+                    width: mainColumn.width
+                    spacing: 4
 
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Forward / Backward
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "FORWARD / BACKWARD" }
+                    property string groupId: modelData.id
+                    property string groupLabel: modelData.label
 
-            ParamSlider {
-                paramId: "DF_KP_FWD"
-                label: "Forward P-gain"
-                description: "Proportional gain for moving towards the target"
-                isFloat: true
-                minVal: 0; maxVal: 20; stepVal: 0.1
-            }
+                    // Section header
+                    Rectangle {
+                        width: parent.width
+                        height: 32
+                        color: "#22334455"
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: groupLabel
+                            color: "#66aaff"
+                            font.pixelSize: 12
+                            font.bold: true
+                            font.letterSpacing: 1.5
+                        }
+                    }
 
-            ParamSlider {
-                paramId: "DF_KP_BACK"
-                label: "Backward P-gain"
-                description: "Proportional gain for reversing away when too close"
-                isFloat: true
-                minVal: 0; maxVal: 20; stepVal: 0.1
-            }
+                    // Params in this group
+                    Repeater {
+                        model: root.paramsByGroup[groupId] || []
 
-            ParamSlider {
-                paramId: "DF_MAX_FWD"
-                label: "Max forward speed (m/s)"
-                description: "Clamp forward velocity to this limit"
-                isFloat: true
-                minVal: 0; maxVal: 10; stepVal: 0.1
-            }
+                        Loader {
+                            width: mainColumn.width
+                            property var paramDef: modelData
 
-            ParamSlider {
-                paramId: "DF_MAX_BACK"
-                label: "Max backward speed (m/s)"
-                description: "Clamp backward velocity to this limit"
-                isFloat: true
-                minVal: 0; maxVal: 10; stepVal: 0.1
-            }
-
-            ParamSlider {
-                paramId: "DF_FWD_ALPHA"
-                label: "Forward smoothing (α)"
-                description: "Low-pass filter coefficient for forward/backward commands"
-                isFloat: true
-                minVal: 0.01; maxVal: 1.0; stepVal: 0.01
-            }
-
-            ParamSwitch {
-                paramId: "DF_SMTH_FWD"
-                label: "Smooth forward"
-                description: "Enable exponential smoothing on forward/backward commands"
-            }
-
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Target & Dead Zone
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "TARGET & DEAD ZONE" }
-
-            ParamSlider {
-                paramId: "DF_TGT_DIST"
-                label: "Target distance (m)"
-                description: "Desired follow distance in metres (0 = disabled — distance keeping off)"
-                isFloat: true
-                minVal: 0; maxVal: 50; stepVal: 0.5
-            }
-
-            ParamSlider {
-                paramId: "DF_DZ_H_PCT"
-                label: "Dead-zone height (%)"
-                description: "Vertical dead-zone as a percentage of frame height. Target inside this zone → no movement."
-                isFloat: true
-                minVal: 0; maxVal: 50; stepVal: 0.5
-            }
-
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Flight
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "FLIGHT" }
-
-            ParamSlider {
-                paramId: "DF_TAKEOFF_M"
-                label: "Takeoff altitude (m)"
-                description: "Altitude used for automated takeoff"
-                isFloat: true
-                minVal: 1; maxVal: 20; stepVal: 0.5
-            }
-
-            ParamSwitch {
-                paramId: "DF_FIX_ALT"
-                label: "Fixed altitude"
-                description: "When enabled, the drone maintains takeoff altitude and does not climb/descend"
-            }
-
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Tracking
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "TRACKING" }
-
-            ParamReadOnly {
-                paramId: "DF_ACTIVE_ID"
-                label: "Active tracked ID"
-                description: "Read-only — the person ID currently being followed (0 = none)"
-            }
-
-            ParamSpinBox {
-                paramId: "DF_FOLLOW_ID"
-                label: "Follow ID"
-                description: "-1 = idle (hold position), 0 = auto (largest person), >0 = lock to specific ID"
-                minVal: -1; maxVal: 999
-            }
-
-            // ════════════════════════════════════════════════════════════
-            // SECTION: Video
-            // ════════════════════════════════════════════════════════════
-            SectionHeader { label: "VIDEO" }
-
-            ParamSpinBox {
-                paramId: "DF_BITRATE"
-                label: "Bitrate (kbps)"
-                description: "x264 encoder bitrate for the drone-follow video stream. Updated by variable-bitrate automatically."
-                minVal: 500; maxVal: 20000
+                            sourceComponent: {
+                                if (!paramDef) return null;
+                                if (paramDef.read_only)
+                                    return readOnlyComp;
+                                if (paramDef.type === "bool")
+                                    return switchComp;
+                                if (paramDef.type === "float")
+                                    return sliderComp;
+                                return spinBoxComp;
+                            }
+                        }
+                    }
+                }
             }
 
             // ── bottom spacer ───────────────────────────────────────────
@@ -404,361 +436,289 @@ Rectangle {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  INLINE COMPONENTS
+    //  REUSABLE COMPONENTS
     // ════════════════════════════════════════════════════════════════════
 
-    // ── Section header ──────────────────────────────────────────────────
-    component SectionHeader: Rectangle {
-        property string label: ""
-        width: parent.width
-        height: 32
-        color: "#22334455"
+    // ── Float slider ────────────────────────────────────────────────────
+    Component {
+        id: sliderComp
 
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 16
-            anchors.verticalCenter: parent.verticalCenter
-            text: label
-            color: "#66aaff"
-            font.pixelSize: 12
-            font.bold: true
-            font.letterSpacing: 1.5
-        }
-    }
+        Rectangle {
+            id: sliderRoot
+            width: parent ? parent.width : 100
+            height: root.rowHeight + (sDescText.visible ? sDescText.height : 0)
+            color: "transparent"
 
-    // ── Float/Int slider with label + value readout ─────────────────────
-    component ParamSlider: Rectangle {
-        id: paramSliderRoot
-        property string paramId: ""
-        property string label: ""
-        property string description: ""
-        property bool isFloat: false
-        property real minVal: 0
-        property real maxVal: 100
-        property real stepVal: 1
-
-        width: parent.width
-        height: root.rowHeight + (descText.visible ? descText.height : 0)
-        color: "transparent"
-
-        // Depend on root._uc so this re-evaluates when the model updates
-        property real currentValue: (root._uc * 0) + (isFloat ? root.getFloat(paramId) : root.getInt(paramId))
-
-        // Track whether the slider value differs from the model value (unsent change)
-        property bool dirty: Math.abs(slider.value - currentValue) > (stepVal * 0.1)
-
-        // Re-set slider value when model pushes an update (binding breaks after user drag)
-        onCurrentValueChanged: {
-            if (!slider.pressed) {
-                slider.value = currentValue;
+            property var pd: paramDef
+            property real currentValue: {
+                var dummy = root._uc;
+                return root.getFloat(pd.mavlink_id);
             }
-        }
+            property bool dirty: Math.abs(sSlider.value - currentValue) > ((pd.step || 0.1) * 0.1)
 
-        function sendCurrentSliderValue() {
-            if (paramSliderRoot.isFloat) {
-                root.setFloat(paramSliderRoot.paramId, slider.value);
-            } else {
-                root.setInt(paramSliderRoot.paramId, Math.round(slider.value));
-            }
-        }
-
-        // Debounce timer — fires 800ms after last movement as fallback
-        // in case onPressedChanged doesn't fire (e.g. touch input quirks)
-        Timer {
-            id: sendTimer
-            interval: 800
-            repeat: false
-            onTriggered: {
-                if (paramSliderRoot.dirty && !slider.pressed) {
-                    paramSliderRoot.sendCurrentSliderValue();
-                }
-            }
-        }
-
-        Column {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.margins: 16
-
-            // Row 1: label + value + dirty indicator
-            RowLayout {
-                width: parent.width
-                Text {
-                    text: paramSliderRoot.label
-                    color: "#dddddd"
-                    font.pixelSize: 14
-                    Layout.fillWidth: true
-                }
-                // Unsent indicator
-                Text {
-                    text: "\u25cf"
-                    color: "#ff8800"
-                    font.pixelSize: 10
-                    visible: paramSliderRoot.dirty
-                }
-                Text {
-                    text: paramSliderRoot.isFloat ? slider.value.toFixed(2) : Math.round(slider.value).toString()
-                    color: paramSliderRoot.dirty ? "#ff8800" : "#66aaff"
-                    font.pixelSize: 14
-                    font.bold: true
-                    horizontalAlignment: Text.AlignRight
-                }
+            onCurrentValueChanged: {
+                if (!sSlider.pressed) sSlider.value = currentValue;
             }
 
-            // Row 2: slider
-            Slider {
-                id: slider
-                width: parent.width
-                from: paramSliderRoot.minVal
-                to: paramSliderRoot.maxVal
-                stepSize: paramSliderRoot.stepVal
-                value: paramSliderRoot.currentValue
-                live: true
-
-                // Primary: send on release
-                onPressedChanged: {
-                    if (!pressed) {
-                        sendTimer.stop();
-                        paramSliderRoot.sendCurrentSliderValue();
-                    }
-                }
-
-                // Backup: restart debounce timer on any movement
-                onMoved: {
-                    sendTimer.restart();
-                }
-
-                background: Rectangle {
-                    x: slider.leftPadding
-                    y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                    implicitWidth: 200
-                    implicitHeight: 4
-                    width: slider.availableWidth
-                    height: implicitHeight
-                    radius: 2
-                    color: "#333333"
-
-                    Rectangle {
-                        width: slider.visualPosition * parent.width
-                        height: parent.height
-                        color: paramSliderRoot.dirty ? "#cc6600" : "#3388cc"
-                        radius: 2
-                    }
-                }
-
-                handle: Rectangle {
-                    x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
-                    y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    radius: 9
-                    color: slider.pressed ? "#55aaff" : (paramSliderRoot.dirty ? "#cc6600" : "#3388cc")
-                    border.color: "#222222"
-                    border.width: 1
-                }
+            function sendValue() {
+                root.setFloat(pd.mavlink_id, sSlider.value);
             }
 
-            // Row 3: description
-            Text {
-                id: descText
-                width: parent.width
-                text: paramSliderRoot.description
-                color: "#666666"
-                font.pixelSize: 11
-                wrapMode: Text.WordWrap
-                visible: paramSliderRoot.description.length > 0
-                topPadding: 2
-                bottomPadding: 4
+            Timer {
+                id: sSendTimer; interval: 800; repeat: false
+                onTriggered: {
+                    if (sliderRoot.dirty && !sSlider.pressed)
+                        sliderRoot.sendValue();
+                }
             }
-        }
-    }
-
-    // ── Boolean switch ──────────────────────────────────────────────────
-    component ParamSwitch: Rectangle {
-        id: paramSwitchRoot
-        property string paramId: ""
-        property string label: ""
-        property string description: ""
-
-        width: parent.width
-        height: 52 + (switchDescText.visible ? switchDescText.height : 0)
-        color: "transparent"
-
-        // Depend on root._uc so this re-evaluates when the model updates
-        property bool currentValue: (root._uc >= 0) && root.getBool(paramId)
-
-        onCurrentValueChanged: paramSwitch.checked = currentValue
-
-        RowLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.margins: 16
 
             Column {
-                Layout.fillWidth: true
-                Text {
-                    text: paramSwitchRoot.label
-                    color: "#dddddd"
-                    font.pixelSize: 14
-                }
-                Text {
-                    id: switchDescText
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: 16
+
+                RowLayout {
                     width: parent.width
-                    text: paramSwitchRoot.description
-                    color: "#666666"
-                    font.pixelSize: 11
+                    Text {
+                        text: sliderRoot.pd.label || sliderRoot.pd.mavlink_id
+                        color: "#dddddd"; font.pixelSize: 14
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        text: "\u25cf"; color: "#ff8800"
+                        font.pixelSize: 10; visible: sliderRoot.dirty
+                    }
+                    Text {
+                        text: sSlider.value.toFixed(2)
+                        color: sliderRoot.dirty ? "#ff8800" : "#66aaff"
+                        font.pixelSize: 14; font.bold: true
+                    }
+                }
+
+                Slider {
+                    id: sSlider
+                    width: parent.width
+                    from: sliderRoot.pd.min !== undefined ? sliderRoot.pd.min : 0
+                    to:   sliderRoot.pd.max !== undefined ? sliderRoot.pd.max : 100
+                    stepSize: sliderRoot.pd.step || 0.1
+                    value: sliderRoot.currentValue
+                    live: true
+                    onPressedChanged: {
+                        if (!pressed) { sSendTimer.stop(); sliderRoot.sendValue(); }
+                    }
+                    onMoved: sSendTimer.restart()
+
+                    background: Rectangle {
+                        x: sSlider.leftPadding
+                        y: sSlider.topPadding + sSlider.availableHeight / 2 - height / 2
+                        implicitWidth: 200; implicitHeight: 4
+                        width: sSlider.availableWidth; height: implicitHeight
+                        radius: 2; color: "#333333"
+                        Rectangle {
+                            width: sSlider.visualPosition * parent.width
+                            height: parent.height
+                            color: sliderRoot.dirty ? "#cc6600" : "#3388cc"
+                            radius: 2
+                        }
+                    }
+                    handle: Rectangle {
+                        x: sSlider.leftPadding
+                           + sSlider.visualPosition * (sSlider.availableWidth - width)
+                        y: sSlider.topPadding + sSlider.availableHeight / 2 - height / 2
+                        implicitWidth: 18; implicitHeight: 18; radius: 9
+                        color: sSlider.pressed ? "#55aaff"
+                               : (sliderRoot.dirty ? "#cc6600" : "#3388cc")
+                        border.color: "#222222"; border.width: 1
+                    }
+                }
+
+                Text {
+                    id: sDescText
+                    width: parent.width
+                    text: sliderRoot.pd.description || ""
+                    color: "#666666"; font.pixelSize: 11
                     wrapMode: Text.WordWrap
-                    visible: paramSwitchRoot.description.length > 0
-                    topPadding: 2
+                    visible: text.length > 0
+                    topPadding: 2; bottomPadding: 4
                 }
             }
+        }
+    }
 
-            Switch {
-                id: paramSwitch
-                checked: paramSwitchRoot.currentValue
-                onClicked: {
-                    root.setBool(paramSwitchRoot.paramId, checked);
+    // ── Bool switch ─────────────────────────────────────────────────────
+    Component {
+        id: switchComp
+
+        Rectangle {
+            id: switchRoot
+            width: parent ? parent.width : 100
+            height: 52 + (swDescText.visible ? swDescText.height : 0)
+            color: "transparent"
+
+            property var pd: paramDef
+            property bool currentValue: {
+                var dummy = root._uc;
+                return root.getBool(pd.mavlink_id);
+            }
+            onCurrentValueChanged: swSwitch.checked = currentValue
+
+            RowLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: 16
+
+                Column {
+                    Layout.fillWidth: true
+                    Text {
+                        text: switchRoot.pd.label || switchRoot.pd.mavlink_id
+                        color: "#dddddd"; font.pixelSize: 14
+                    }
+                    Text {
+                        id: swDescText
+                        width: parent.width
+                        text: switchRoot.pd.description || ""
+                        color: "#666666"; font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                        visible: text.length > 0; topPadding: 2
+                    }
                 }
 
-                indicator: Rectangle {
-                    implicitWidth: 46
-                    implicitHeight: 22
-                    x: parent.leftPadding
-                    y: parent.height / 2 - height / 2
-                    radius: 11
-                    color: parent.checked ? "#3388cc" : "#444444"
-                    border.color: "#222222"
+                Switch {
+                    id: swSwitch
+                    checked: switchRoot.currentValue
+                    onClicked: root.setBool(switchRoot.pd.mavlink_id, checked)
 
-                    Rectangle {
-                        x: parent.parent.checked ? parent.width - width - 3 : 3
-                        y: 3
-                        width: 16
-                        height: 16
-                        radius: 8
-                        color: "#e0e0e0"
-                        Behavior on x { NumberAnimation { duration: 120 } }
+                    indicator: Rectangle {
+                        implicitWidth: 46; implicitHeight: 22
+                        x: parent.leftPadding
+                        y: parent.height / 2 - height / 2
+                        radius: 11
+                        color: parent.checked ? "#3388cc" : "#444444"
+                        border.color: "#222222"
+                        Rectangle {
+                            x: parent.parent.checked ? parent.width - width - 3 : 3
+                            y: 3
+                            width: 16; height: 16; radius: 8
+                            color: "#e0e0e0"
+                            Behavior on x { NumberAnimation { duration: 120 } }
+                        }
                     }
                 }
             }
         }
     }
 
-    // ── Read-only integer display ───────────────────────────────────────
-    component ParamReadOnly: Rectangle {
-        id: paramReadOnlyRoot
-        property string paramId: ""
-        property string label: ""
-        property string description: ""
+    // ── Read-only display ───────────────────────────────────────────────
+    Component {
+        id: readOnlyComp
 
-        width: parent.width
-        height: 48
-        color: "transparent"
+        Rectangle {
+            id: roRoot
+            width: parent ? parent.width : 100
+            height: 48
+            color: "transparent"
 
-        // Depend on root._uc so this re-evaluates when the model updates
-        property int currentValue: (root._uc * 0) + root.getInt(paramId)
-
-        RowLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.margins: 16
-
-            Column {
-                Layout.fillWidth: true
-                Text {
-                    text: paramReadOnlyRoot.label
-                    color: "#dddddd"
-                    font.pixelSize: 14
-                }
-                Text {
-                    text: paramReadOnlyRoot.description
-                    color: "#666666"
-                    font.pixelSize: 11
-                    visible: paramReadOnlyRoot.description.length > 0
-                }
+            property var pd: paramDef
+            property var currentValue: {
+                var dummy = root._uc;
+                if (pd.type === "float")
+                    return root.getFloat(pd.mavlink_id);
+                return root.getInt(pd.mavlink_id);
             }
 
-            Text {
-                text: paramReadOnlyRoot.currentValue.toString()
-                color: paramReadOnlyRoot.currentValue > 0 ? "#44cc88" : "#888888"
-                font.pixelSize: 18
-                font.bold: true
+            RowLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: 16
+
+                Column {
+                    Layout.fillWidth: true
+                    Text {
+                        text: roRoot.pd.label || roRoot.pd.mavlink_id
+                        color: "#dddddd"; font.pixelSize: 14
+                    }
+                    Text {
+                        text: roRoot.pd.description || ""
+                        color: "#666666"; font.pixelSize: 11
+                        visible: text.length > 0
+                    }
+                }
+
+                Text {
+                    text: (roRoot.pd.type === "float")
+                          ? Number(roRoot.currentValue).toFixed(2)
+                          : roRoot.currentValue.toString()
+                    color: roRoot.currentValue > 0 ? "#44cc88" : "#888888"
+                    font.pixelSize: 18; font.bold: true
+                }
             }
         }
     }
 
-    // ── Integer spin box ────────────────────────────────────────────────
-    component ParamSpinBox: Rectangle {
-        id: paramSpinBoxRoot
-        property string paramId: ""
-        property string label: ""
-        property string description: ""
-        property int minVal: 0
-        property int maxVal: 100
+    // ── Int spin box ────────────────────────────────────────────────────
+    Component {
+        id: spinBoxComp
 
-        width: parent.width
-        height: 60 + (spinDescText.visible ? spinDescText.height : 0)
-        color: "transparent"
+        Rectangle {
+            id: sbRoot
+            width: parent ? parent.width : 100
+            height: 60 + (sbDescText.visible ? sbDescText.height : 0)
+            color: "transparent"
 
-        // Depend on root._uc so this re-evaluates when the model updates
-        property int currentValue: (root._uc * 0) + root.getInt(paramId)
-
-        onCurrentValueChanged: spinBox.value = currentValue
-
-        RowLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.margins: 16
-
-            Column {
-                Layout.fillWidth: true
-                Text {
-                    text: paramSpinBoxRoot.label
-                    color: "#dddddd"
-                    font.pixelSize: 14
-                }
-                Text {
-                    id: spinDescText
-                    width: parent.width - spinBox.width - 20
-                    text: paramSpinBoxRoot.description
-                    color: "#666666"
-                    font.pixelSize: 11
-                    wrapMode: Text.WordWrap
-                    visible: paramSpinBoxRoot.description.length > 0
-                    topPadding: 2
-                }
+            property var pd: paramDef
+            property int currentValue: {
+                var dummy = root._uc;
+                return root.getInt(pd.mavlink_id);
             }
+            onCurrentValueChanged: sbSpin.value = currentValue
 
-            SpinBox {
-                id: spinBox
-                from: paramSpinBoxRoot.minVal
-                to: paramSpinBoxRoot.maxVal
-                value: paramSpinBoxRoot.currentValue
-                editable: true
-                implicitWidth: 140
+            RowLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: 16
 
-                onValueModified: {
-                    root.setInt(paramSpinBoxRoot.paramId, value);
+                Column {
+                    Layout.fillWidth: true
+                    Text {
+                        text: sbRoot.pd.label || sbRoot.pd.mavlink_id
+                        color: "#dddddd"; font.pixelSize: 14
+                    }
+                    Text {
+                        id: sbDescText
+                        width: parent.width - sbSpin.width - 20
+                        text: sbRoot.pd.description || ""
+                        color: "#666666"; font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                        visible: text.length > 0; topPadding: 2
+                    }
                 }
 
-                background: Rectangle {
-                    color: "#333333"
-                    radius: 4
-                    border.color: "#555555"
-                }
+                SpinBox {
+                    id: sbSpin
+                    from: sbRoot.pd.min !== undefined ? sbRoot.pd.min : 0
+                    to:   sbRoot.pd.max !== undefined ? sbRoot.pd.max : 100
+                    value: sbRoot.currentValue
+                    editable: true
+                    implicitWidth: 140
+                    onValueModified: root.setInt(sbRoot.pd.mavlink_id, value)
 
-                contentItem: TextInput {
-                    text: spinBox.textFromValue(spinBox.value, spinBox.locale)
-                    color: "#e0e0e0"
-                    font.pixelSize: 14
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    readOnly: !spinBox.editable
-                    validator: spinBox.validator
-                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                    background: Rectangle {
+                        color: "#333333"; radius: 4
+                        border.color: "#555555"
+                    }
+                    contentItem: TextInput {
+                        text: sbSpin.textFromValue(sbSpin.value, sbSpin.locale)
+                        color: "#e0e0e0"; font.pixelSize: 14
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        readOnly: !sbSpin.editable
+                        validator: sbSpin.validator
+                        inputMethodHints: Qt.ImhFormattedNumbersOnly
+                    }
                 }
             }
         }
