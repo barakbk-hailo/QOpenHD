@@ -197,6 +197,7 @@
         <file>ui/configpopup/openhd_settings/MavlinkParamPanel.qml</file>
         <file>ui/configpopup/openhd_settings/MavlinkParamEditor.qml</file>
         <file>ui/configpopup/openhd_settings/OHDSettingsPanel.qml</file>
+        <file>ui/configpopup/openhd_settings/HailoDroneFollowPanel.qml</file>
         <file>ui/configpopup/openhd_settings/DialoqueFreqChangeGndOnly.qml</file>
         <file>ui/configpopup/ConfigPopupSidebarButton.qml</file>
         <file>ui/configpopup/rc/RcInfoScreen.qml</file>

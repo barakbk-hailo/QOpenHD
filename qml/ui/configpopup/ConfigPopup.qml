@@ -48,7 +48,7 @@ Rectangle {
 
     function user_quidance_open_connect_screen(){
         openSettings();
-        mainStackLayout.currentIndex=5;
+        mainStackLayout.currentIndex=6;
     }
 
     function user_guidance_open_openhd_settings_find_air_unit_location(){
@@ -197,13 +197,21 @@ Rectangle {
                     m_selection_index: 1
                 }
 
+                // Hailo Drone-Follow settings
+                ConfigPopupSidebarButton{
+                    id:  hailo_button
+                    m_icon_text: "\uf544"
+                    m_description_text: "DroneFollow"
+                    m_selection_index: 2
+                }
+
                 // (QOpenHD Settings - AppSettingsPanel)
                 // OSD
                 ConfigPopupSidebarButton{
                     id:  qopenhd_button
                     m_icon_text: "\uf013"
                     m_description_text: "OSD"
-                    m_selection_index: 2
+                    m_selection_index: 3
                 }
 
                 // Log
@@ -211,7 +219,7 @@ Rectangle {
                     id:  log_button
                     m_icon_text: "\uf0c9"
                     m_description_text: "Log"
-                    m_selection_index: 3
+                    m_selection_index: 4
                 }
 
                 // RC
@@ -219,7 +227,7 @@ Rectangle {
                     id:  rc
                     m_icon_text: "\uf11b"
                     m_description_text: "RC"
-                    m_selection_index: 4
+                    m_selection_index: 5
                 }
 
                 // We only need the connect panel on android (external device)
@@ -228,7 +236,7 @@ Rectangle {
                     id:  connect_button
                     m_icon_text: "\uf6ff"
                     m_description_text: "Connect"
-                    m_selection_index: 5
+                    m_selection_index: 6
                 }
 
                 // Credits and copyright
@@ -236,7 +244,7 @@ Rectangle {
                     id:  credits
                     m_icon_text: "\uf005"
                     m_description_text: "Credits"
-                    m_selection_index: 6
+                    m_selection_index: 7
                 }
 
                 // Developer stats
@@ -244,7 +252,7 @@ Rectangle {
                     id:  developerstats
                     m_icon_text: "\uf0ad"
                     m_description_text: "DEV"
-                    m_selection_index: 7
+                    m_selection_index: 8
                 }
             }
         }
@@ -274,6 +282,11 @@ Rectangle {
          //this is "openhd" menu
         OHDSettingsPanel {
             id:  ohdSettingsPanel
+        }
+
+        // Hailo Drone-Follow dedicated settings panel
+        HailoDroneFollowPanel {
+            id: hailoDroneFollowPanel
         }
 
         AppSettingsPanel {

@@ -195,7 +195,14 @@ void MavlinkSettingsModel::try_set_param_int_async(const QString param_id, int v
        set_ui_is_busy(false);
        finalize_update_param(param_id,static_cast<int32_t>(value),result.is_accepted(),log_result);
     };
-    XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
+    const bool enqueued=XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
+    if(!enqueued){
+        // XParam queue full — callback will never fire, so we must reset busy state ourselves
+        qDebug()<<"WARN: XParam queue full, could not enqueue param set for"<<param_id;
+        m_is_currently_busy=false;
+        set_ui_is_busy(false);
+        finalize_update_param(param_id,static_cast<int32_t>(value),false,log_result);
+    }
 }
 
 void MavlinkSettingsModel::try_set_param_string_async(const QString param_id,QString value,bool log_result)
@@ -221,7 +228,13 @@ void MavlinkSettingsModel::try_set_param_string_async(const QString param_id,QSt
         set_ui_is_busy(false);
         finalize_update_param(param_id,value.toStdString(),result.is_accepted(),log_result);
      };
-     XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
+     const bool enqueued=XParam::instance().try_set_param_async(command,imp_cb,nullptr,std::chrono::milliseconds(300),10);
+     if(!enqueued){
+         qDebug()<<"WARN: XParam queue full, could not enqueue string param set for"<<param_id;
+         m_is_currently_busy=false;
+         set_ui_is_busy(false);
+         finalize_update_param(param_id,value.toStdString(),false,log_result);
+     }
 }
 
 QString MavlinkSettingsModel::try_update_parameter_int(const QString param_id,int value)
