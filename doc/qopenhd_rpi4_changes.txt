@@ -1,0 +1,367 @@
+QOpenHD RPi4 Video Fixes - Summary of Changes
+===============================================
+Date: 8-9 March 2026
+
+
+Change 1: Handling a "mailbox full" situation (avcodec_decoder.cpp)
+-------------------------------------------------------------------
+File: app/videostreaming/avcodec/avcodec_decoder.cpp
+Function: decode_and_wait_for_frame()
+
+The problem: The app sends compressed video chunks to the RPi4's hardware
+video decoder chip. Think of it like a mailbox: you put compressed video in,
+and decoded pictures come out the other side. On the RPi4, this chip sometimes
+says "my mailbox is full, come back later" (that's the EAGAIN error). The
+original code treated this as a fatal error and stopped decoding entirely.
+
+The fix: When the chip says "full", we now:
+  1. Go check the output side and collect all the decoded pictures that are ready
+  2. Display those pictures
+  3. Try putting the compressed video in again (now that we emptied the output)
+
+It's like checking your mailbox before trying to stuff more mail into
+someone else's.
+
+
+Change 2: Removing an invalid graphics command (gl_videorenderer.cpp)
+---------------------------------------------------------------------
+File: app/videostreaming/avcodec/gl/gl_videorenderer.cpp
+Function: update_texture_egl_external()
+
+The problem: The code had a line glEnable(GL_TEXTURE_EXTERNAL_OES) which tells
+the graphics system "turn on support for external textures." This command
+worked on older/different GPUs, but on the RPi4's V3D GPU with Mesa drivers,
+this command doesn't exist - it's like pressing a button on a TV remote that
+doesn't have that button. The GPU responds with "I don't know what that is"
+(GL_INVALID_ENUM), and everything after that fails.
+
+The fix: Removed that line. The external texture feature doesn't need to be
+"enabled" - it's always available if the GPU supports it. The line was
+unnecessary even on GPUs where it didn't cause an error.
+
+We also added a check right after we try to connect the decoded video to a
+texture: if the GPU reports an error, we detect it and cleanly report failure
+instead of continuing with broken state.
+
+
+Change 3: Fallback rendering path (gl_videorenderer.cpp + gl_videorenderer.h)
+-----------------------------------------------------------------------------
+Files: app/videostreaming/avcodec/gl/gl_videorenderer.cpp
+       app/videostreaming/avcodec/gl/gl_videorenderer.h
+Function: update_texture_gl()
+
+The problem: The decoded video from the RPi4 hardware is in a special
+GPU-memory format called "DRM_PRIME" - the picture sits in the GPU's own
+memory. The fastest way to display it is to tell the graphics system "hey, use
+this picture directly from GPU memory" (that's the EGL external texture path).
+But under Wayland (the desktop environment), this direct path doesn't work on
+the RPi4's Mesa drivers.
+
+The fix: We added a Plan B. If the direct GPU-memory path fails:
+  1. We remember that it failed (so we don't waste time trying it again every
+     frame - that's the m_egl_external_failed flag)
+  2. We copy the picture from GPU memory to regular memory, converting it to a
+     standard color format (YUV420P - which is basically the raw color values
+     of every pixel split into brightness + color channels)
+  3. We display it using the standard software texture path, which works
+     everywhere
+
+This is slightly slower (extra copy from GPU to CPU to GPU), but it works
+reliably.
+
+
+Change 4: Service file (rpi_qopenhd.service)
+---------------------------------------------
+File: systemd/rpi_qopenhd.service
+
+The problem: When QOpenHD starts as a system service (no desktop), Qt didn't
+know how to talk to the screen. It defaulted to a software graphics renderer
+called "llvmpipe" - basically drawing everything on the CPU, ignoring the GPU
+entirely.
+
+The fix: Added -platform eglfs to the startup command. This tells Qt: "talk
+directly to the screen hardware through the GPU" instead of going through a
+desktop environment. This is only used when running without a desktop
+(production mode).
+
+
+Summary (one sentence each)
+----------------------------
+1. EAGAIN fix - Don't crash when the decoder chip's output buffer is full;
+   empty it first, then continue
+2. glEnable removal - Remove a command that doesn't exist on this GPU
+3. YUV420P fallback - If the fast display path doesn't work, copy the picture
+   to regular memory and display it the standard way
+4. Service file - Tell Qt to talk directly to the GPU when there's no desktop
+   running
+
+
+Files Changed
+--------------
+- app/videostreaming/avcodec/avcodec_decoder.cpp       (EAGAIN drain loop)
+- app/videostreaming/avcodec/gl/gl_videorenderer.cpp   (remove glEnable, add fallback)
+- app/videostreaming/avcodec/gl/gl_videorenderer.h     (add m_egl_external_failed member)
+- systemd/rpi_qopenhd.service                         (add -platform eglfs)
+
+
+================================================================================
+CLI-ONLY MODE vs DESKTOP (WAYLAND) — AND THE MEMCPY QUESTION
+================================================================================
+
+WHAT IS THE MEMCPY ISSUE?
+--------------------------
+The RPi4 hardware video decoder produces decoded pictures in the GPU's own
+memory (called "DRM_PRIME" format). Ideally, we want to display those
+pictures directly from GPU memory — zero copying, very fast.
+
+Under the desktop (labwc/Wayland), this direct path doesn't work. The reason
+is that the Wayland compositor (labwc) owns the screen and the GPU's display
+pipeline. QOpenHD runs as a "window" inside that compositor. The special GPU
+trick (EGL external textures) that lets you display directly from GPU memory
+doesn't work properly through the compositor.
+
+So the fallback does this:
+  GPU memory → copy to CPU memory → convert to YUV420P → upload back to GPU
+
+That's 2 extra copies per frame. At 720p 60fps that's about 55 MB/s of extra
+memory bandwidth, plus CPU time for the transfer.
+
+WILL CLI-ONLY FIX THIS?
+-------------------------
+YES. If you switch to CLI-only (no desktop, no labwc), QOpenHD runs with
+EGLFS, which means it talks directly to the GPU and the screen. In that mode:
+  - QOpenHD gets exclusive access to the display
+  - The EGL external texture path should work
+  - Decoded frames stay in GPU memory and are displayed directly
+  - Zero extra copies, lowest latency, lowest CPU usage
+
+Even if the EGL external path still fails for some reason on this specific
+Mesa version, the fallback we added will kick in automatically — so it will
+always work, just with slightly more CPU.
+
+HOW TO SWITCH TO CLI-ONLY (NO REFORMATTING NEEDED)
+---------------------------------------------------
+Option A: Using raspi-config (recommended)
+  sudo raspi-config
+  → System Options → Boot / Auto Login → Console Autologin
+  → Finish → Reboot
+
+Option B: Manual command
+  sudo systemctl set-default multi-user.target
+  sudo reboot
+
+TO SWITCH BACK TO DESKTOP LATER:
+  sudo systemctl set-default graphical.target
+  sudo reboot
+
+That's it. No formatting, no reinstalling. It just tells the system to boot
+into a text console instead of the desktop.
+
+
+================================================================================
+FULL OPERATIONAL FLOW
+================================================================================
+
+PREREQUISITES
+--------------
+- Air unit: RPi with OpenHD installed, camera connected, WiFi adapter
+- Ground unit: RPi4 (this Pi), QOpenHD built, WiFi adapter
+- Both units have OpenHD installed at /usr/local/bin/openhd
+- WiFi adapters that support monitor mode on both units
+
+IMPORTANT: OpenHD auto-detects WiFi cards in monitor mode. Make sure the
+WiFi adapter(s) for wifibroadcast are plugged in BEFORE starting OpenHD.
+
+
+STEP 1: START THE AIR UNIT
+----------------------------
+SSH into the air Pi (or connect keyboard/monitor), then:
+
+  Terminal 1 (OpenHD air):
+  sudo openhd --air --clean-start
+
+  NOTE: The venv does NOT need to be activated for OpenHD itself.
+  The venv is only needed for drone-follow (Terminal 2).
+
+  --air          tells OpenHD this is the air unit (drone side)
+  --clean-start  wipes old settings to avoid conflicts
+
+This will:
+  - Detect the camera (libcamera/rpicamsrc)
+  - Put the WiFi adapter into monitor mode
+  - Start encoding video (H264) and transmitting over wifibroadcast
+
+You should see log messages about camera detection and wfb_tx starting.
+Leave this running.
+
+  Terminal 2 (Drone follow — on the same air Pi):
+  cd /home/pi/hailo-drone-follow
+  source venv/bin/activate
+  drone-follow --input rpi --openhd-stream --horizontal-mirror --connection tcpout://127.0.0.1:5760
+
+  This runs the Hailo drone-follow pipeline on the air unit.
+  It must be run from /home/pi/hailo-drone-follow with the venv activated.
+  It must be started AFTER OpenHD air is running.
+    --input rpi           use the RPi camera as input
+    --openhd-stream       feed processed video into OpenHD's video stream
+    --horizontal-mirror   mirror the image horizontally
+    --connection ...      connect to the flight controller on TCP port 5760
+
+
+STEP 2: START THE GROUND UNIT (this Pi)
+-----------------------------------------
+Open a terminal on this Pi:
+
+  sudo openhd --ground --clean-start
+
+  --ground       tells OpenHD this is the ground station
+  --clean-start  wipes old settings
+
+This will:
+  - Put the WiFi adapter into monitor mode
+  - Start receiving wifibroadcast packets
+  - Forward decoded video to UDP port 5600 on localhost
+  - Forward telemetry to UDP port 14550
+
+Leave this running.
+
+
+STEP 3: START QOPENHD (the display app)
+-----------------------------------------
+Open another terminal on this Pi.
+
+If running WITH desktop (labwc/Wayland still active):
+
+  WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+    ./build/release/QOpenHD -platform wayland
+
+If running CLI-ONLY (no desktop, after switching to multi-user.target):
+
+  sudo env -u DISPLAY -u WAYLAND_DISPLAY \
+    QT_QPA_PLATFORM=eglfs \
+    QT_QPA_EGLFS_KMS_ATOMIC=1 \
+    QT_QPA_EGLFS_KMS_CONFIG=/home/pi/qopenHD/rpi_qt_eglfs_kms_config.json \
+    XDG_RUNTIME_DIR=/tmp/runtime-root \
+    ./build/release/QOpenHD -platform eglfs
+
+  NOTE: The "env -u DISPLAY -u WAYLAND_DISPLAY" part removes leftover
+  display variables that can confuse Qt into trying to connect to X11.
+  XDG_RUNTIME_DIR is needed so Qt doesn't complain about missing runtime dir.
+
+To run the HAILO DRONE-FOLLOW build (with dedicated DroneFollow settings tab):
+
+  Replace ./build/release/QOpenHD with ./build/release/QOpenHD_hailo_v3 in
+  the commands above. For example, CLI-only mode:
+
+  cd /home/pi/qopenHD
+  sudo env -u DISPLAY -u WAYLAND_DISPLAY \
+    QT_QPA_PLATFORM=eglfs \
+    QT_QPA_EGLFS_KMS_ATOMIC=1 \
+    QT_QPA_EGLFS_KMS_CONFIG=/home/pi/qopenHD/rpi_qt_eglfs_kms_config.json \
+    XDG_RUNTIME_DIR=/tmp/runtime-root \
+    ./build/release/QOpenHD_hailo_v3 -platform eglfs
+
+  This build adds a "DroneFollow" tab in the settings popup with sliders
+  for all DF_ parameters (yaw/forward gains, smoothing, target distance,
+  etc.). The original QOpenHD binary is still available at
+  ./build/release/QOpenHD for use without the Hailo tab.
+
+
+AUTOMATED STARTUP (using systemd services)
+--------------------------------------------
+Instead of typing commands manually every boot, install the services:
+
+1. Install the OpenHD service:
+   sudo cp /home/pi/OpenHD/systemd/openhd_rpi.service /etc/systemd/system/openhd.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable openhd
+
+2. Install the QOpenHD binary and config:
+   sudo cp /home/pi/qopenHD/build/release/QOpenHD /usr/local/bin/QOpenHD
+   sudo mkdir -p /usr/local/share/qopenhd
+   sudo cp /home/pi/qopenHD/rpi_qt_eglfs_kms_config.json /usr/local/share/qopenhd/
+
+3. Install the QOpenHD service:
+   sudo cp /home/pi/qopenHD/systemd/rpi_qopenhd.service /etc/systemd/system/qopenhd.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable qopenhd
+
+4. Configure ground mode in /boot/openhd/hardware.config (already set)
+
+5. Switch to CLI-only:
+   sudo systemctl set-default multi-user.target
+
+6. Reboot:
+   sudo reboot
+
+After reboot, OpenHD ground + QOpenHD will start automatically.
+Note: The OpenHD service file does NOT use --ground or --air flags.
+OpenHD auto-detects mode on official OpenHD images. If it doesn't detect
+correctly, you may need to edit the service file:
+  sudo nano /etc/systemd/system/openhd.service
+  Change: ExecStart=/usr/local/bin/openhd
+  To:     ExecStart=/usr/local/bin/openhd --ground
+
+
+VERIFYING IT WORKS
+--------------------
+1. Check OpenHD is running:
+   sudo systemctl status openhd
+
+2. Check QOpenHD is running:
+   sudo systemctl status qopenhd
+
+3. Check video data is flowing:
+   ss -ulnp | grep 5600
+
+4. Check logs:
+   journalctl -u openhd -f
+   journalctl -u qopenhd -f
+
+5. Quick test - is video arriving on port 5600?
+   python3 -c "
+   import socket, time
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+   s.bind(('0.0.0.0', 5600))
+   s.settimeout(5)
+   total = 0
+   try:
+       while time.time() - time.time() + 5 > 0:
+           data, addr = s.recvfrom(65535)
+           total += len(data)
+           if total > 0: break
+   except: pass
+   s.close()
+   print('Video flowing!' if total > 0 else 'No video data')
+   "
+
+
+TROUBLESHOOTING
+-----------------
+- "Could not open display" / "X11 connection rejected" in CLI mode:
+  Leftover DISPLAY variable from a previous desktop session. Use:
+    sudo env -u DISPLAY -u WAYLAND_DISPLAY ...
+  Or simply log out and log back in to a clean CLI session.
+
+- "XDG_RUNTIME_DIR not set":
+  Add XDG_RUNTIME_DIR=/tmp/runtime-root to the command. The systemd service
+  file handles this automatically.
+
+- "Permission denied" on page flip:
+  You're running with desktop. Either switch to CLI or use -platform wayland
+
+- No video data on port 5600:
+  Check that OpenHD ground is running and WiFi link is established.
+  The air unit must be powered on and transmitting.
+
+- "Error during decoding":
+  Should be fixed by the EAGAIN change. If it persists, check decoder device:
+  ls /dev/video10   (should exist — bcm2835-codec-decode)
+
+- Black screen but GUI works:
+  Air unit may not be transmitting. Check air unit is running.
+
+- Air unit not detected as RPi:
+  OpenHD may think it's an "older RPi". This is cosmetic and shouldn't
+  affect functionality.
