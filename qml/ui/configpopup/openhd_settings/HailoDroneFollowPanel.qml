@@ -190,10 +190,11 @@ Rectangle {
             pbg[groups[g].id] = [];
         }
 
-        // Distribute params into groups
+        // Distribute params into groups (skip hidden ones)
         var params = parsed.params || [];
         for (var p = 0; p < params.length; ++p) {
             var param = params[p];
+            if (param.hidden) continue;
             var gid = param.group || "other";
             if (!pbg[gid]) {
                 gl.push({id: gid, label: gid.toUpperCase()});

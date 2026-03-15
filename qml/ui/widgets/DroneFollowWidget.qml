@@ -72,6 +72,66 @@ BaseWidget {
                 color: "#666666"
             }
 
+            // AUTO / CLEAR button — fixed position at top
+            Button {
+                width: parent.width
+                height: 38
+                text: followId <= 0
+                      ? (activeId > 0 ? "\u2713  AUTO (tracking #" + activeId + ")" : "\u2713  AUTO (LARGEST)")
+                      : "CLEAR \u2014 USE AUTO"
+                highlighted: followId === 0
+                background: Rectangle {
+                    color: (followId === 0) ? "#226644" : "#444444"
+                    radius: 4
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "white"
+                    font.pixelSize: 13
+                    font.bold: followId === 0
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    style: Text.Outline
+                    styleColor: "#000000"
+                }
+                onClicked: {
+                    _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
+                    droneFollowWidget.bw_manually_close_action_popup()
+                }
+            }
+
+            // IDLE / PAUSE button — fixed position at top
+            Button {
+                width: parent.width
+                height: 38
+                text: followId < 0 ? "\u25CE  IDLE (holding position)" : "PAUSE \u2014 HOLD POSITION"
+                highlighted: followId < 0
+                background: Rectangle {
+                    color: followId < 0 ? "#7a5000" : "#444444"
+                    radius: 4
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "white"
+                    font.pixelSize: 13
+                    font.bold: followId < 0
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    style: Text.Outline
+                    styleColor: "#000000"
+                }
+                onClicked: {
+                    _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", -1)
+                    droneFollowWidget.bw_manually_close_action_popup()
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: "#666666"
+            }
+
             Text {
                 width: parent.width
                 text: availIds.length > 0
@@ -108,60 +168,6 @@ BaseWidget {
                         _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", modelData)
                         droneFollowWidget.bw_manually_close_action_popup()
                     }
-                }
-            }
-
-            // AUTO / CLEAR button
-            Button {
-                width: parent.width
-                height: 38
-                text: followId <= 0
-                      ? (activeId > 0 ? "\u2713  AUTO (tracking #" + activeId + ")" : "\u2713  AUTO (LARGEST)")
-                      : "CLEAR \u2014 USE AUTO"
-                highlighted: followId === 0
-                background: Rectangle {
-                    color: (followId === 0) ? "#226644" : "#444444"
-                    radius: 4
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "white"
-                    font.pixelSize: 13
-                    font.bold: followId === 0
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    style: Text.Outline
-                    styleColor: "#000000"
-                }
-                onClicked: {
-                    _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", 0)
-                    droneFollowWidget.bw_manually_close_action_popup()
-                }
-            }
-
-            // IDLE / PAUSE button
-            Button {
-                width: parent.width
-                height: 38
-                text: followId < 0 ? "\u25CE  IDLE (holding position)" : "PAUSE \u2014 HOLD POSITION"
-                highlighted: followId < 0
-                background: Rectangle {
-                    color: followId < 0 ? "#7a5000" : "#444444"
-                    radius: 4
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "white"
-                    font.pixelSize: 13
-                    font.bold: followId < 0
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    style: Text.Outline
-                    styleColor: "#000000"
-                }
-                onClicked: {
-                    _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", -1)
-                    droneFollowWidget.bw_manually_close_action_popup()
                 }
             }
         }
