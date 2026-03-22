@@ -289,6 +289,7 @@
         <file>ui/sidebar/Panel7Status.qml</file>
         <file>ui/sidebar/Panel8FindAirUnit.qml</file>
         <file>ui/sidebar/SidebarStackButton.qml</file>
+        <file>ui/sidebar/Panel9GroundRecording.qml</file>
         <file>ui/sidebar/RCChannelView.qml</file>
         <file>ui/widgets/map/ADSBcautionMarker.png</file>
         <file>ui/widgets/map/ADSBmarker.png</file>

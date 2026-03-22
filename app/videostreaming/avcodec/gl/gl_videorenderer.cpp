@@ -189,7 +189,7 @@ bool GL_VideoRenderer::update_texture_egl_external(AVFrame* frame) {
   assert(frame);
   assert(frame->format==AV_PIX_FMT_DRM_PRIME);
   EGLDisplay egl_display=eglGetCurrentDisplay();
-  assert(egl_display);
+  if(!egl_display) return false;
   // We can now also give the frame back to av, since we are updating to a new one.
   if(egl_frame_texture.av_frame!= nullptr){
 	av_frame_free(&egl_frame_texture.av_frame);
