@@ -377,6 +377,11 @@ bool QOpenHD::is_platform_rock()
 #endif
 }
 
+QString QOpenHD::get_env(const QString &name) {
+    const char* val = std::getenv(name.toStdString().c_str());
+    return val ? QString::fromUtf8(val) : QString();
+}
+
 void QOpenHD::keep_screen_on(bool on)
 {
 #if defined(__android__)

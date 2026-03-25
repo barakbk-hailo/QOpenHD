@@ -70,20 +70,6 @@ Item {
                 color: "transparent"
                 border.color: det.tracked ? "#00ff00" : "#ffffff"
                 border.width: det.tracked ? 3 : 2
-
-                Text {
-                    anchors {
-                        bottom: parent.top
-                        left:   parent.left
-                        bottomMargin: 2
-                    }
-                    text: "ID " + det.id
-                    color: parent.border.color
-                    font.pixelSize: 13
-                    font.bold: det.tracked
-                    style: Text.Outline
-                    styleColor: "#000000"
-                }
             }
         }
     }

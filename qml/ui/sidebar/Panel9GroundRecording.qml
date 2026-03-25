@@ -111,72 +111,30 @@ SideBarBasePanel {
             }
         }
 
-        // --- Embed BBs section ---
+        // --- Embed & record options section ---
         Rectangle {
             width: parent.width; height: 1; color: "#333"
         }
 
-        // Include labels toggle
+        // Save HUD overlay toggle (recording-time — captures OSD to .osd file)
         Row {
             width: parent.width; spacing: 10
             Text {
-                text: "Include detection labels"
+                text: "Save HUD overlay"
                 font.pixelSize: 14; color: "#cccccc"
                 anchors.verticalCenter: parent.verticalCenter
             }
             Switch {
-                checked: _groundRecordingManager.includeLabels
-                onToggled: _groundRecordingManager.includeLabels = checked
+                checked: _groundRecordingManager.saveHud
+                onToggled: _groundRecordingManager.saveHud = checked
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
-
-        // Embed last button
-        Rectangle {
-            width: parent.width; height: 44; radius: 6
-            color: (_groundRecordingManager.isEmbedding || _groundRecordingManager.isRecording) ? "#555" : "#1a6b99"
-            MouseArea {
-                anchors.fill: parent
-                onClicked: _groundRecordingManager.embedBBsForLast()
-            }
-            Text {
-                anchors.centerIn: parent
-                text: "Embed BBs for Last Video"
-                font.pixelSize: 15; font.bold: true; color: "white"
-            }
-        }
-
-        // Embed all button
-        Rectangle {
-            width: parent.width; height: 44; radius: 6
-            color: (_groundRecordingManager.isEmbedding || _groundRecordingManager.isRecording) ? "#555" : "#1a5599"
-            MouseArea {
-                anchors.fill: parent
-                onClicked: _groundRecordingManager.embedBBsForAll()
-            }
-            Text {
-                anchors.centerIn: parent
-                text: "Embed BBs for All Videos"
-                font.pixelSize: 15; font.bold: true; color: "white"
-            }
-        }
-
-        // Embed progress bar
-        Rectangle {
-            width: parent.width; height: 30; color: "#171d25"; radius: 4
-            visible: _groundRecordingManager.isEmbedding
-
-            Rectangle {
-                anchors.left: parent.left; anchors.top: parent.top
-                anchors.bottom: parent.bottom; anchors.margins: 2
-                width: Math.max(0, (parent.width - 4) * _groundRecordingManager.embedProgress)
-                color: "#2d8c2d"; radius: 3
-            }
-            Text {
-                anchors.centerIn: parent
-                text: _groundRecordingManager.embedStatus
-                font.pixelSize: 12; color: "white"
-            }
+        Text {
+            width: parent.width
+            text: "Embed via: embed_recording.py"
+            font.pixelSize: 11; font.italic: true; color: "#888888"
+            leftPadding: 4
         }
 
         // --- Recording count ---

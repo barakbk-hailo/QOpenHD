@@ -146,9 +146,15 @@ Rectangle {
     Component.onCompleted: loadSchema()
 
     function loadSchema() {
+        // Resolve user home — QML doesn't have $HOME directly,
+        // but StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        // isn't available in Qt 5.15 QML. Use a C++ helper or env var.
+        var userHome = _qopenhd.get_env("SUDO_USER") !== ""
+            ? "/home/" + _qopenhd.get_env("SUDO_USER")
+            : (_qopenhd.get_env("HOME") !== "" ? _qopenhd.get_env("HOME") : "/home/pi");
         var paths = [
             "file:///usr/local/share/openhd/df_params.json",
-            "file:///home/pi/hailo-drone-follow/df_params.json"
+            "file://" + userHome + "/hailo-drone-follow/df_params.json"
         ];
         for (var i = 0; i < paths.length; ++i) {
             var xhr = new XMLHttpRequest();
@@ -285,7 +291,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Place df_params.json in one of:\n" +
                       "  /usr/local/share/openhd/df_params.json\n" +
-                      "  /home/pi/hailo-drone-follow/df_params.json\n\n" +
+                      "  ~/hailo-drone-follow/df_params.json\n\n" +
                       "This file is provided by the drone-follow package."
                 color: "#888888"
                 font.pixelSize: 13

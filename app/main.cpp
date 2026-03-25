@@ -513,6 +513,12 @@ int main(int argc, char *argv[]) {
     // Now we start mavlink for the first time
     MavlinkTelemetry::instance().start();
 
+    // Wire OSD capture target for ground recording
+    if (!engine.rootObjects().isEmpty()) {
+        QQuickItem* osdItem = engine.rootObjects().first()->findChild<QQuickItem*>("osdCaptureTarget");
+        GroundRecordingManager::instance().setOsdItem(osdItem);
+    }
+
     QRenderStats::instance().register_to_root_window(engine);
     //debug_kms();
     LogMessagesModel::instanceGround().addLogMessage("QOpenHD","running");
