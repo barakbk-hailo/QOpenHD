@@ -17,9 +17,13 @@
 
 #include "telemetry/models/hailodetectionmodel.h"
 #include "telemetry/models/camerastreammodel.h"
-#include "videostreaming/avcodec/avcodec_decoder.h"
+#include "videostreaming/vscommon/rtp/rtpreceiver.h"
 
+#ifdef QOPENHD_ENABLE_VIDEO_VIA_AVCODEC
 extern "C" RTPReceiver* qopenhd_get_primary_rtp_receiver();
+#else
+static RTPReceiver* qopenhd_get_primary_rtp_receiver() { return nullptr; }
+#endif
 
 static const QString TAG = "GroundRec";
 
@@ -125,10 +129,10 @@ void GroundRecordingManager::startRecording()
 
     qDebug() << TAG << "Starting recording:" << baseName;
 
-    // Access the RTPReceiver through AVCodecDecoder
+    // Access the RTPReceiver through AVCodecDecoder (only available with avcodec video)
     RTPReceiver* rtp = qopenhd_get_primary_rtp_receiver();
     if (!rtp) {
-        setStatusText("Error: no video stream");
+        setStatusText("Error: no video stream (avcodec not available)");
         qDebug() << TAG << "No RTPReceiver available";
         return;
     }
