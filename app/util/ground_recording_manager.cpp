@@ -34,7 +34,7 @@ static const QString TAG = "GroundRec";
 GroundRecordingManager::GroundRecordingManager(QObject *parent)
     : QObject(parent)
 {
-    m_recording_dir = "/home/pi/Videos";
+    m_recording_dir = QDir::homePath() + "/Videos";
     QDir dir(m_recording_dir);
     if (!dir.exists()) dir.mkpath(".");
 
