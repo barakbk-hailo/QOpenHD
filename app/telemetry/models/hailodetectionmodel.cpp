@@ -47,8 +47,9 @@ void HailoDetectionModel::startReceiving()
 
 void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 {
-    // v3 header: version(1) + active_id(2) + follow_id(2) + count(1) = 6 bytes
-    // Per bbox: id(2) + cx(2) + cy(2) + w(2) + h(2) + flags(1) = 11 bytes
+    // v3 header: version(1) + active_id(2) + follow_id(2) + count(1)      = 6 bytes
+    // v4 header: version(1) + active_id(2) + follow_id(2) + mode(1) + count(1) = 7 bytes
+    // Per bbox (both versions): id(2) + cx(2) + cy(2) + w(2) + h(2) + flags(1) = 11 bytes
     if (len < 6) return;
 
     const uint8_t version = data[0];
@@ -58,14 +59,28 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 
     const uint16_t active = read_u16_le(data + 1);
     const int16_t  follow = static_cast<int16_t>(read_u16_le(data + 3));
-    const uint8_t  count  = data[5];
 
-    if (len < 6u + count * 11u) return;  // truncated
+    // Mode is only present from v4 onwards. v3 senders default to AUTO
+    // (the only state the air side could communicate before mode landed).
+    uint8_t mode_byte = static_cast<uint8_t>(Mode::Auto);
+    uint8_t count = 0;
+    size_t header_size = 0;
+    if (version >= 4) {
+        if (len < 7) return;
+        mode_byte = data[5];
+        count = data[6];
+        header_size = 7;
+    } else {
+        count = data[5];
+        header_size = 6;
+    }
+
+    if (len < header_size + count * 11u) return;  // truncated
 
     QVariantList list;
     list.reserve(count);
     for (uint8_t i = 0; i < count; ++i) {
-        const uint8_t* b = data + 6 + i * 11;
+        const uint8_t* b = data + header_size + i * 11;
         QVariantMap det;
         det["id"]      = static_cast<int>(read_u16_le(b));
         det["cx"]      = read_u16_le(b + 2) / 65535.0;
@@ -78,6 +93,7 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
 
     set_active_id(static_cast<int>(active));
     set_follow_id(static_cast<int>(follow));
+    set_mode(static_cast<int>(mode_byte));
     set_detections(list);
 }
 
