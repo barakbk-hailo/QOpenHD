@@ -58,21 +58,47 @@ Item {
     }
 
     // -------------------------------------------------------------------------
-    // Followee-change flash: tint badge + show toast for 2 s after active_id
-    // transitions (only when the new id is non-zero, to suppress boot-up flash).
+    // Followee-change flash + cause attribution.
+    //
+    // When active_id transitions we briefly flash the badge and a centred toast.
+    // The toast text distinguishes who caused the switch:
+    //
+    //   USER LOCKED ID N   ← the operator clicked a bbox in QOpenHD
+    //   AUTO ID N          ← drone-follow auto-acquired (largest person, REID drift)
+    //   TARGET CLEARED     ← follow_id went to 0
+    //
+    // Attribution: _requestedFollowId is updated on every QOpenHD bbox click;
+    // when active_id later matches it, the switch was user-initiated. Anything
+    // else is treated as AUTO.
     // -------------------------------------------------------------------------
     property int _lastActiveId: 0
+    property int _requestedFollowId: -999     // sentinel for "no recent user click"
     property bool flashActive: false
+    property string toastText: ""
+
+    function followId(id) {
+        // Single entry point used by every bbox click. Marks the request so
+        // the next active_id transition is attributed to USER.
+        root._requestedFollowId = id
+        _ohdSystemAirSettingsModel.try_set_param_int_async("DF_FOLLOW_ID", id)
+    }
+
     Connections {
         target: _hailoDetectionModel
         function onActive_idChanged() {
-            if (_hailoDetectionModel.active_id !== root._lastActiveId) {
-                if (_hailoDetectionModel.active_id !== 0) {
-                    root.flashActive = true
-                    flashTimer.restart()
-                }
-                root._lastActiveId = _hailoDetectionModel.active_id
+            var newId = _hailoDetectionModel.active_id
+            if (newId === root._lastActiveId) return
+
+            if (newId === 0) {
+                root.toastText = "TARGET CLEARED"
+            } else if (newId === root._requestedFollowId) {
+                root.toastText = "USER LOCKED ID " + newId
+            } else {
+                root.toastText = "AUTO ID " + newId
             }
+            root.flashActive = true
+            flashTimer.restart()
+            root._lastActiveId = newId
         }
     }
     Timer {
@@ -95,6 +121,18 @@ Item {
             property real bh: det.h * root.renderedH
             property real centerX: root.offsetX + det.cx * root.renderedW
             property real centerY: root.offsetY + det.cy * root.renderedH
+
+            // Click-to-follow: tap anywhere inside the bbox to set DF_FOLLOW_ID
+            // to this detection's id. Same MAVLink path the DroneFollowWidget
+            // settings panel uses. Covers both the white bbox (non-tracked) and
+            // the green cross (tracked, where clicking re-confirms the lock).
+            MouseArea {
+                x: parent.bx; y: parent.by
+                width: parent.bw; height: parent.bh
+                z: 5
+                acceptedButtons: Qt.LeftButton
+                onClicked: root.followId(parent.det.id)
+            }
 
             // Non-tracked detections — thin white bbox + ID label.
             Rectangle {
@@ -192,7 +230,7 @@ Item {
         Text {
             id: toastText
             anchors.centerIn: parent
-            text: "TARGET CHANGED"
+            text: root.toastText.length > 0 ? root.toastText : "TARGET CHANGED"
             color: "#ffffff"
             font.pixelSize: Math.max(16, Math.round(root.renderedH * 0.034))
             font.bold: true
