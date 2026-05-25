@@ -195,11 +195,12 @@ Item {
     }
 
     // -------------------------------------------------------------------------
-    // Mode badge — top-left. Always visible while receiving.
+    // Mode badge — top-center. Always visible while receiving.
     // -------------------------------------------------------------------------
     Rectangle {
         id: badge
-        x: 16; y: 16
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 16
         width: badgeText.implicitWidth + 16
         height: badgeText.implicitHeight + 8
         color: root.flashActive ? "#e28b4a" : "#000000"
