@@ -116,6 +116,8 @@ Item {
             b7.takeover_control();
         }else if(stack_index==7){
             b8.takeover_control();
+        }else if(stack_index==8){
+            b9.takeover_control();
         }
     }
 
@@ -136,6 +138,8 @@ Item {
             panel7.takeover_control();
         }else if(stack_index==7){
             panel8.takeover_control();
+        }else if(stack_index==8){
+            panel9.takeover_control();
         }
     }
 
@@ -232,6 +236,12 @@ Item {
             override_tag: "status"
             override_index: 7
         }
+        SidebarStackButton{
+            id: b9
+            override_text: "\uf111"
+            override_tag: "gnd_rec"
+            override_index: 8
+        }
     }
 
 
@@ -276,6 +286,10 @@ Item {
         Panel7Status{
             id: panel8
             visible: m_stack_index==7;
+        }
+        Panel9GroundRecording{
+            id: panel9
+            visible: m_stack_index==8;
         }
     }
 

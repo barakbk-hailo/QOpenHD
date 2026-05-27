@@ -662,29 +662,10 @@
        resolution_framerate.height_px == 0 && resolution_framerate.fps == 0) {
      return "AUTO";
    }
+   // Show actual resolution (e.g. "1280x720") instead of labels like HD/FHD
    std::stringstream ss;
-   if (resolution_framerate.width_px == 640 &&
-       resolution_framerate.height_px == 480) {
-     ss << "VGA 4:3";
-   } else if (resolution_framerate.width_px == 848 &&
-              resolution_framerate.height_px == 480) {
-     ss << "VGA 16:9";
-   } else if (resolution_framerate.width_px == 896 &&
-              resolution_framerate.height_px == 504) {
-     ss << "SD 16:9";
-   } else if (resolution_framerate.width_px == 1280 &&
-              resolution_framerate.height_px == 720) {
-     ss << "HD 16:9";
-   } else if (resolution_framerate.width_px == 1920 &&
-              resolution_framerate.height_px == 1080) {
-     ss << "FHD 16:9";
-   } else if (resolution_framerate.width_px == 2560 &&
-              resolution_framerate.height_px == 1440) {
-     ss << "2K 16:9";
-   } else {
-     ss << resolution_framerate.width_px << "x"
-        << resolution_framerate.height_px;
-   }
+   ss << resolution_framerate.width_px << "x"
+      << resolution_framerate.height_px;
    ss << "\n" << resolution_framerate.fps << "fps";
    return ss.str();
  }

@@ -221,11 +221,57 @@ void RTPReceiver::nalu_data_callback(const std::chrono::steady_clock::time_point
         m_out_file->write((const char*)nalu_data,nalu_data_size);
         m_out_file->flush();
     }
-    /*int random=rand();
-    if(random % 10 == 0){
-        qDebug()<<"Dropping frame";
-        return;
-    }*/
+    // Ground recording tee (runtime-controlled)
+    {
+        std::lock_guard<std::mutex> lock(m_rec_mutex);
+        if(m_rec_stream_file){
+            m_rec_stream_file->write((const char*)nalu_data, nalu_data_size);
+            // Write NALU timestamp entry: byte_offset wall_clock_ms is_keyframe nalu_size
+            if(m_rec_ts_file){
+                NALU nalu(nalu_data, nalu_data_size, is_h265);
+                const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    creation_time - m_rec_start_time).count();
+                (*m_rec_ts_file) << m_rec_byte_offset << " "
+                                 << elapsed_us << " "
+                                 << (nalu.is_keyframe() ? 1 : 0) << " "
+                                 << nalu_data_size << "\n";
+            }
+            m_rec_byte_offset += nalu_data_size;
+            m_rec_nalu_count++;
+        }
+    }
     queue_data(nalu_data,nalu_data_size);
 }
 
+// --- Ground recording: tee raw NALUs to file ---
+
+void RTPReceiver::startRecordingStream(const std::string& h264_path, const std::string& ts_path)
+{
+    std::lock_guard<std::mutex> lock(m_rec_mutex);
+    if(m_rec_stream_file) return;  // already recording
+    m_rec_stream_file = std::make_unique<std::ofstream>(h264_path, std::ios::binary);
+    m_rec_ts_file = std::make_unique<std::ofstream>(ts_path);
+    m_rec_byte_offset = 0;
+    m_rec_nalu_count = 0;
+    m_rec_start_time = std::chrono::steady_clock::now();
+    qDebug() << "RTPReceiver: started recording to" << h264_path.c_str();
+}
+
+void RTPReceiver::stopRecordingStream()
+{
+    std::lock_guard<std::mutex> lock(m_rec_mutex);
+    if(!m_rec_stream_file) return;
+    m_rec_stream_file->flush();
+    m_rec_stream_file.reset();
+    if(m_rec_ts_file){
+        m_rec_ts_file->flush();
+        m_rec_ts_file.reset();
+    }
+    qDebug() << "RTPReceiver: stopped recording," << m_rec_nalu_count << "NALUs," << m_rec_byte_offset << "bytes";
+}
+
+bool RTPReceiver::isRecordingStream() const
+{
+    // Not locking here — approximate check is fine for UI
+    return m_rec_stream_file != nullptr;
+}

@@ -1,6 +1,9 @@
 #include "hailodetectionmodel.h"
 
 #include <QDebug>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 
 #include "../../videostreaming/vscommon/udp/UDPReceiver.h"
 #include "tutil/qopenhdmavlinkhelper.hpp"
@@ -95,6 +98,36 @@ void HailoDetectionModel::on_udp_data(const uint8_t* data, size_t len)
     set_follow_id(static_cast<int>(follow));
     set_mode(static_cast<int>(mode_byte));
     set_detections(list);
+
+    // Write metadata to JSONL file if recording
+    {
+        std::lock_guard<std::mutex> lock(m_meta_mutex);
+        if(m_meta_file){
+            const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - m_meta_start_time).count();
+            QJsonObject obj;
+            obj["ts_us"] = static_cast<qint64>(elapsed_us);
+            obj["active_id"] = static_cast<int>(active);
+            obj["follow_id"] = static_cast<int>(follow);
+            QJsonArray arr;
+            for(const auto& v : list){
+                QJsonObject d;
+                auto m = v.toMap();
+                d["id"] = m["id"].toInt();
+                d["cx"] = m["cx"].toDouble();
+                d["cy"] = m["cy"].toDouble();
+                d["w"]  = m["w"].toDouble();
+                d["h"]  = m["h"].toDouble();
+                d["tracked"] = m["tracked"].toBool();
+                arr.append(d);
+            }
+            obj["dets"] = arr;
+            QJsonDocument doc(obj);
+            auto line = doc.toJson(QJsonDocument::Compact);
+            m_meta_file->write(line.constData(), line.size());
+            m_meta_file->write("\n", 1);
+        }
+    }
 }
 
 void HailoDetectionModel::update_receiving()
@@ -106,4 +139,29 @@ void HailoDetectionModel::update_receiving()
     }
     const auto elapsed_ms = QOpenHDMavlinkHelper::getTimeMilliseconds() - last;
     set_receiving(elapsed_ms < 2000);
+}
+
+// --- Ground recording: save BB metadata to JSONL file ---
+
+void HailoDetectionModel::startRecordingMetadata(const std::string& jsonl_path)
+{
+    std::lock_guard<std::mutex> lock(m_meta_mutex);
+    if(m_meta_file) return;
+    m_meta_file = std::make_unique<std::ofstream>(jsonl_path);
+    m_meta_start_time = std::chrono::steady_clock::now();
+    qDebug() << "HailoDetectionModel: started recording metadata to" << jsonl_path.c_str();
+}
+
+void HailoDetectionModel::stopRecordingMetadata()
+{
+    std::lock_guard<std::mutex> lock(m_meta_mutex);
+    if(!m_meta_file) return;
+    m_meta_file->flush();
+    m_meta_file.reset();
+    qDebug() << "HailoDetectionModel: stopped recording metadata";
+}
+
+bool HailoDetectionModel::isRecordingMetadata() const
+{
+    return m_meta_file != nullptr;
 }

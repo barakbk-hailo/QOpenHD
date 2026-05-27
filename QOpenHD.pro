@@ -133,6 +133,7 @@ SOURCES += \
     app/util/WorkaroundMessageBox.cpp \
     app/util/qrenderstats.cpp \
     app/util/restartqopenhdmessagebox.cpp \
+    app/util/ground_recording_manager.cpp \
     app/main.cpp \
 
 HEADERS += \
@@ -152,6 +153,7 @@ HEADERS += \
     app/util/WorkaroundMessageBox.h \
     app/util/qrenderstats.h \
     app/util/restartqopenhdmessagebox.h \
+    app/util/ground_recording_manager.h \
     app/util/lqutils_include.h \
 
 

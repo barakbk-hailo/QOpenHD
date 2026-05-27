@@ -69,6 +69,8 @@ public:
     Q_INVOKABLE bool ping_ip(QString ip);
     Q_INVOKABLE bool is_platform_rpi();
     Q_INVOKABLE bool is_platform_rock();
+    // Get environment variable (used by QML to resolve $HOME under sudo)
+    Q_INVOKABLE QString get_env(const QString &name);
     //
     // Tries to mimic android toast as much as possible
     //

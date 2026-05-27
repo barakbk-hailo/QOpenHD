@@ -44,6 +44,11 @@ public:
     // get width height using the config data (SPS)
     // do not call that if there is no config data
     std::array<int,2> sps_get_width_height();
+
+    // --- Ground recording: tee raw NALUs to file ---
+    void startRecordingStream(const std::string& h264_path, const std::string& ts_path);
+    void stopRecordingStream();
+    bool isRecordingStream() const;
 private:
     std::unique_ptr<UDPReceiver> m_udp_receiver=nullptr;
     std::unique_ptr<RTPDecoder> m_rtp_decoder=nullptr;
@@ -53,6 +58,13 @@ private:
     void nalu_data_callback(const std::chrono::steady_clock::time_point creation_time,const uint8_t* nalu_data,const int nalu_data_size);
     //
     std::unique_ptr<std::ofstream> m_out_file=nullptr;
+    // Ground recording files (runtime-controlled)
+    std::mutex m_rec_mutex;
+    std::unique_ptr<std::ofstream> m_rec_stream_file=nullptr;
+    std::unique_ptr<std::ofstream> m_rec_ts_file=nullptr;
+    int64_t m_rec_byte_offset=0;
+    int m_rec_nalu_count=0;
+    std::chrono::steady_clock::time_point m_rec_start_time;
 private:
     const bool is_h265;
 private:

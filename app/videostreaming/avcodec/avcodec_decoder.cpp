@@ -16,6 +16,13 @@
 
 #include "ExternalDecodeService.hpp"
 
+// Global pointer for ground recording access
+static RTPReceiver* s_primary_rtp_receiver = nullptr;
+
+extern "C" RTPReceiver* qopenhd_get_primary_rtp_receiver() {
+    return s_primary_rtp_receiver;
+}
+
 static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type){
     int err = 0;
     ctx->hw_frames_ctx = NULL;
@@ -863,6 +870,7 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
      m_rtp_receiver=std::make_unique<RawReceiver>(stream_config.udp_rtp_input_port,stream_config.udp_rtp_input_ip_address,stream_config.video_codec==1,settings.generic.dev_feed_incomplete_frames_to_decoder);
 #else
      m_rtp_receiver=std::make_unique<RTPReceiver>(stream_config.udp_rtp_input_port,stream_config.udp_rtp_input_ip_address,stream_config.video_codec==1,settings.generic.dev_feed_incomplete_frames_to_decoder);
+     s_primary_rtp_receiver = m_rtp_receiver.get();
 #endif
 
      reset_before_decode_start();

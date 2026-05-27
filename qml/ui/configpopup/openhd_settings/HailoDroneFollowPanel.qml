@@ -28,8 +28,13 @@ Rectangle {
 
     property int rowHeight: 56
 
-    // Track model updates - forces currentValue bindings to re-evaluate
-    property int _uc: _ohdSystemAirSettingsModel.update_count
+    // Track model updates - forces currentValue bindings to re-evaluate.
+    // _hailoTick covers the case where QOpenHD's full-refetch path
+    // (ui_thread_replace_param_set) replaces the cache without bumping
+    // update_count — the generic QOpenHD bindings don't hit that path
+    // today, but DF_LOAD does via the refresh timer below.
+    property int _hailoTick: 0
+    property int _uc: _ohdSystemAirSettingsModel.update_count + _hailoTick
 
     // ── availability guard ──────────────────────────────────────────────
     property bool airAlive: _ohdSystemAir.is_alive
@@ -78,8 +83,18 @@ Rectangle {
     }
 
     property bool _modelBusy: _ohdSystemAirSettingsModel.ui_is_busy
+    // Set to true after we kick a full refetch (DF_LOAD flow). When the model
+    // goes idle with this flag set, we know the replace-param-set just finished
+    // and bump _hailoTick so DF_* bindings re-read the refreshed cache.
+    property bool _awaitingRefetch: false
     on_ModelBusyChanged: {
-        if (!_modelBusy) _drainQueue();
+        if (!_modelBusy) {
+            _drainQueue();
+            if (root._awaitingRefetch) {
+                root._awaitingRefetch = false;
+                root._hailoTick++;
+            }
+        }
     }
 
     property int _busyTicks: 0
@@ -105,6 +120,21 @@ Rectangle {
                 root._busyTicks = 0;
                 root._drainQueue();
             }
+        }
+    }
+
+    // One-shot refresh after DF_LOAD — the air unit reloads df_config.json
+    // and mutates many DF_* params. QOpenHD's param model only updates on
+    // request/response cycles, so unsolicited PARAM_EXT_VALUE broadcasts from
+    // the server are ignored — we must re-fetch. Interval covers the
+    // PARAM_EXT_SET round-trip + the air-side load + poll cycle.
+    Timer {
+        id: reloadRefreshTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            _ohdSystemAirSettingsModel.try_refetch_all_parameters_async(true);
+            root._awaitingRefetch = true;
         }
     }
 
@@ -140,15 +170,27 @@ Rectangle {
         var intVal = checked ? 1 : 0;
         _enqueueParam(paramId, intVal);
         _drainQueue();
+        // DF_LOAD=1 tells the air unit to reload df_config.json and mutate
+        // many DF_* params server-side. Kick a full re-fetch so the sliders
+        // reflect the reloaded values (see reloadRefreshTimer).
+        if (paramId === "DF_LOAD" && checked) {
+            reloadRefreshTimer.restart();
+        }
     }
 
     // ── load schema at startup ──────────────────────────────────────────
     Component.onCompleted: loadSchema()
 
     function loadSchema() {
+        // Resolve user home — QML doesn't have $HOME directly,
+        // but StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        // isn't available in Qt 5.15 QML. Use a C++ helper or env var.
+        var userHome = _qopenhd.get_env("SUDO_USER") !== ""
+            ? "/home/" + _qopenhd.get_env("SUDO_USER")
+            : (_qopenhd.get_env("HOME") !== "" ? _qopenhd.get_env("HOME") : "/home/pi");
         var paths = [
             "file:///usr/local/share/openhd/df_params.json",
-            "file:///home/pi/hailo-drone-follow/df_params.json"
+            "file://" + userHome + "/hailo-drone-follow/df_params.json"
         ];
         for (var i = 0; i < paths.length; ++i) {
             var xhr = new XMLHttpRequest();
@@ -285,7 +327,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Place df_params.json in one of:\n" +
                       "  /usr/local/share/openhd/df_params.json\n" +
-                      "  /home/pi/hailo-drone-follow/df_params.json\n\n" +
+                      "  ~/hailo-drone-follow/df_params.json\n\n" +
                       "This file is provided by the drone-follow package."
                 color: "#888888"
                 font.pixelSize: 13

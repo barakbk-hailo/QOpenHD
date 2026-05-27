@@ -36,6 +36,7 @@
 #include "adsb/adsbvehiclemanager.h"
 #include "adsb/qmlobjectlistmodel.h"
 
+#include "util/ground_recording_manager.h"
 
 // Video - annyoing ifdef crap is needed for all the different platforms / configurations
 #include "decodingstatistcs.h"
@@ -427,6 +428,9 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("_hailoDetectionModel", &HailoDetectionModel::instance());
     HailoDetectionModel::instance().startReceiving();
 
+    // Ground recording manager (screen capture via ffmpeg)
+    engine.rootContext()->setContextProperty("_groundRecordingManager", &GroundRecordingManager::instance());
+
     // And then the main part
     engine.rootContext()->setContextProperty("_mavlinkTelemetry", &MavlinkTelemetry::instance());
 
@@ -508,6 +512,12 @@ int main(int argc, char *argv[]) {
     qDebug() << "QML loaded";
     // Now we start mavlink for the first time
     MavlinkTelemetry::instance().start();
+
+    // Wire OSD capture target for ground recording
+    if (!engine.rootObjects().isEmpty()) {
+        QQuickItem* osdItem = engine.rootObjects().first()->findChild<QQuickItem*>("osdCaptureTarget");
+        GroundRecordingManager::instance().setOsdItem(osdItem);
+    }
 
     QRenderStats::instance().register_to_root_window(engine);
     //debug_kms();

@@ -286,234 +286,250 @@ Item {
             enabled: sidebar.visible
         }
 
-        // By default on top row
-        // --------------------------------------------------------------------------
-        LinkDownRSSIWidget {
-            id: downlink
-        }
-        AirTemperatureTXC {
-            id:airTempTxc
-        }
-        GndTemperatureTXC {
-            id:gndTempTxc
-        }
-        WBLinkRateControlWidget{
-            id: wBLinkRateControlWidget
-        }
-        // exp
-        QRenderStatsWidget {
-            id: qRenderStatsWidget
-        }
-        VideoBitrateWidgetPrimary {
-            id: bitrate1
-        }
-        VideoBitrateWidgetSecondary {
-            id: bitrate2
-        }
-        SOCStatusWidgetAir {
-            id: air_status
-        }
-        SOCStatusWidgetGround {
-            id: ground_status
-        }
-        LinkUpRSSIWidget {
-            id: uplink
-        }
-        // ----------------------------------------------------------------------------
-        // TODO SORT ME
+        // --- OSD capture target: contains all telemetry HUD widgets ---
+        // C++ finds this by objectName to call grabToImage() during recording.
+        // DetectionOverlay, SideBarMain, MessageHUD are kept outside so they
+        // are NOT included in the OSD capture.
+        Item {
+            id: osdCaptureTarget
+            objectName: "osdCaptureTarget"
+            anchors.fill: parent
 
-        // + 0% cpu
-        GroundPowerWidget {
-            id: groundPowerWidget
-        }
+            // By default on top row
+            // --------------------------------------------------------------------------
+            LinkDownRSSIWidget {
+                id: downlink
+            }
+            AirTemperatureTXC {
+                id:airTempTxc
+            }
+            GndTemperatureTXC {
+                id:gndTempTxc
+            }
+            WBLinkRateControlWidget{
+                id: wBLinkRateControlWidget
+            }
+            // exp
+            QRenderStatsWidget {
+                id: qRenderStatsWidget
+            }
+            VideoBitrateWidgetPrimary {
+                id: bitrate1
+            }
+            VideoBitrateWidgetSecondary {
+                id: bitrate2
+            }
+            SOCStatusWidgetAir {
+                id: air_status
+            }
+            SOCStatusWidgetGround {
+                id: ground_status
+            }
+            LinkUpRSSIWidget {
+                id: uplink
+            }
+            // ----------------------------------------------------------------------------
+            // TODO SORT ME
 
-        // + 0% cpu
-        AirBatteryWidget {
-            id: air_battery
-        }
+            // + 0% cpu
+            GroundPowerWidget {
+                id: groundPowerWidget
+            }
 
-        // + 0% cpu
-        FlightModeWidget {
-            id: flight_mode
-        }
+            // + 0% cpu
+            AirBatteryWidget {
+                id: air_battery
+            }
 
-        // + 0% cpu
-        GPSWidget {
-            id: gps
-        }
+            // + 0% cpu
+            FlightModeWidget {
+                id: flight_mode
+            }
 
-        // + 0% cpu
-        HomeDistanceWidget {
-            id: home_distance
-        }
+            // + 0% cpu
+            GPSWidget {
+                id: gps
+            }
 
-        // + 0% cpu
-        FlightTimeWidget {
-            id: flight_timer
-        }
+            // + 0% cpu
+            HomeDistanceWidget {
+                id: home_distance
+            }
 
-        // + 0% cpu
-        FlightDistanceWidget {
-            id: flight_distance
-        }
+            // + 0% cpu
+            FlightTimeWidget {
+                id: flight_timer
+            }
 
-        // + 0% cpu
-        FlightMahWidget {
-            id: flight_mah
-        }
+            // + 0% cpu
+            FlightDistanceWidget {
+                id: flight_distance
+            }
 
-        // + 0% cpu
-        FlightMahKmWidget {
-            id: flight_mah_km
-        }
+            // + 0% cpu
+            FlightMahWidget {
+                id: flight_mah
+            }
 
-        // + 0% cpu
-        ImuTempWidget {
-            id: imu_temp
-        }
+            // + 0% cpu
+            FlightMahKmWidget {
+                id: flight_mah_km
+            }
 
-        // + 0% cpu
-        PressTempWidget {
-            id: press_temp
-        }
+            // + 0% cpu
+            ImuTempWidget {
+                id: imu_temp
+            }
 
-        PressTempWidget2 {
-            id: press_temp2
-        }
-        
-        PressTempWidget3 {
-            id: press_temp3
-        }
+            // + 0% cpu
+            PressTempWidget {
+                id: press_temp
+            }
 
-        RCRssiWidget {
-            id: rc_rssi_widget
-        }
+            PressTempWidget2 {
+                id: press_temp2
+            }
 
-        AirspeedTempWidget {
-            id: airspeed_temp
-        }
+            PressTempWidget3 {
+                id: press_temp3
+            }
 
-        BatteryTempWidget {
-            id: battery_temp
-        }
+            RCRssiWidget {
+                id: rc_rssi_widget
+            }
 
-        // + 0% cpu
-        EscTempWidget {
-            id: esc_temp
-        }
+            AirspeedTempWidget {
+                id: airspeed_temp
+            }
 
-        // + 12% cpu
-        HorizonWidget {
-            id: horizonWidget
-        }
+            BatteryTempWidget {
+                id: battery_temp
+            }
 
-        PerformanceHorizonWidget2{
-            id: performanceHorizonWidget
-        }
+            // + 0% cpu
+            EscTempWidget {
+                id: esc_temp
+            }
 
-        // + 7% cpu
-        FpvWidget {
-            id: fpvWidget
-        }
+            // + 12% cpu
+            HorizonWidget {
+                id: horizonWidget
+            }
 
-        // + 4% cpu
-        AltitudeWidget {
-            id: altitudeWidget
-        }
+            PerformanceHorizonWidget2{
+                id: performanceHorizonWidget
+            }
 
-        // + 0% cpu
-        AltitudeSecondWidget {
-            id: altitudesecondWidget
-        }
+            // + 7% cpu
+            FpvWidget {
+                id: fpvWidget
+            }
 
-        // + 17% cpu
-        SpeedWidget {
-            id: speedWidget
-        }
+            // + 4% cpu
+            AltitudeWidget {
+                id: altitudeWidget
+            }
 
-        SpeedSecondWidget {
-            id: speedSecondWidget
-        }
+            // + 0% cpu
+            AltitudeSecondWidget {
+                id: altitudesecondWidget
+            }
 
-        // +3% cpu
-        HeadingWidget {
-            id: headingWidget
-        }
+            // + 17% cpu
+            SpeedWidget {
+                id: speedWidget
+            }
 
-        // + 0% cpu
-        ArrowWidget {
-            id: arrowWidget
-        }
+            SpeedSecondWidget {
+                id: speedSecondWidget
+            }
 
-        // + 0% cpu
-        ThrottleWidget {
-            id: throttleWidget
-            scale: 0.7
-        }
+            // +3% cpu
+            HeadingWidget {
+                id: headingWidget
+            }
 
-        // + 0% cpu
-        ControlWidget {
-            id: controlWidget
-            //   scale: 0.7
-        }
+            // + 0% cpu
+            ArrowWidget {
+                id: arrowWidget
+            }
 
-        // + 0% cpu
-        GPIOWidget {
-            id: gpioWidget
-        }
+            // + 0% cpu
+            ThrottleWidget {
+                id: throttleWidget
+                scale: 0.7
+            }
 
-        // + 3% cpu
-        VibrationWidget {
-            id: vibrationWidget
-        }
+            // + 0% cpu
+            ControlWidget {
+                id: controlWidget
+                //   scale: 0.7
+            }
 
-        VerticalSpeedSimpleWidget{
-            id: vssimpleWidget
-        }
-        VerticalSpeedGaugeWidget{
-            id: vsgaugewidget
-        }
+            // + 0% cpu
+            GPIOWidget {
+                id: gpioWidget
+            }
 
-        // + 0% cpu
-        WindWidget {
-            id: windWidget
-        }
+            // + 3% cpu
+            VibrationWidget {
+                id: vibrationWidget
+            }
 
-        // + 3% cpu
-        RollWidget {
-            id: rollWidget
-        }
+            VerticalSpeedSimpleWidget{
+                id: vssimpleWidget
+            }
+            VerticalSpeedGaugeWidget{
+                id: vsgaugewidget
+            }
 
-        MissionWidget {
-            id: missionWidget
-        }
+            // + 0% cpu
+            WindWidget {
+                id: windWidget
+            }
 
-        AoaWidget {
-            id: aoaWidget
-        }
+            // + 3% cpu
+            RollWidget {
+                id: rollWidget
+            }
 
-        MapWidget {
-            id: mapWidget
-        }
+            MissionWidget {
+                id: missionWidget
+            }
 
-        ExampleWidget {
-            id: exampleWidget
-        }
+            AoaWidget {
+                id: aoaWidget
+            }
+
+            MapWidget {
+                id: mapWidget
+            }
+
+            ExampleWidget {
+                id: exampleWidget
+            }
+
+            DroneFollowWidget {
+                id: droneFollowWidget
+            }
+
+            DistanceSensorWidget{
+                id: distancesensorwidget
+            }
+
+            UAVTimeWiget{
+                id: uavtimewidget
+            }
+
+            X20OverheatWidget{
+
+            }
+        } // end osdCaptureTarget
+
+        // --- Items below are NOT captured in OSD recordings ---
 
         DetectionOverlay {
             id: detectionOverlay
-        }
-
-        DroneFollowWidget {
-            id: droneFollowWidget
-        }
-
-        DistanceSensorWidget{
-            id: distancesensorwidget
-        }
-
-        UAVTimeWiget{
-            id: uavtimewidget
         }
 
         SideBarMain{
@@ -522,10 +538,6 @@ Item {
 
         MessageHUD {
             id: messageHUD
-        }
-
-        X20OverheatWidget{
-
         }
     }
 

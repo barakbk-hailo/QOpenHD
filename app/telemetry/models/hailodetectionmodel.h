@@ -6,6 +6,8 @@
 #include <QTimer>
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <fstream>
 
 #include "util/lqutils_include.h"
 
@@ -61,6 +63,11 @@ public:
     // Start listening for detection data on UDP port 5520
     void startReceiving();
 
+    // --- Ground recording: save BB metadata to JSONL file ---
+    void startRecordingMetadata(const std::string& jsonl_path);
+    void stopRecordingMetadata();
+    bool isRecordingMetadata() const;
+
     L_RO_PROP(int, active_id, set_active_id, 0)
     L_RO_PROP(int, follow_id, set_follow_id, 0)
     L_RO_PROP(int, mode, set_mode, 0)
@@ -73,6 +80,10 @@ private:
     std::unique_ptr<UDPReceiver> m_udp_receiver;
     std::atomic<int64_t> m_last_data_ms{-1};
     std::unique_ptr<QTimer> m_receiving_timer;
+    // Metadata recording
+    std::mutex m_meta_mutex;
+    std::unique_ptr<std::ofstream> m_meta_file;
+    std::chrono::steady_clock::time_point m_meta_start_time;
 };
 
 #endif // HAILODETECTIONMODEL_H

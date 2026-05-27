@@ -123,6 +123,12 @@ private:
     static std::string resolution_framerate_to_string(const ResolutionFramerate& data);
     ResolutionFramerate m_curr_res_framerate{};
     std::chrono::steady_clock::time_point m_last_hud_message_camera_status=std::chrono::steady_clock::now();
+public:
+    // Expose current stream resolution/framerate for ground recording
+    int get_stream_width() const { return m_curr_res_framerate.width; }
+    int get_stream_height() const { return m_curr_res_framerate.height; }
+    int get_stream_fps() const { return m_curr_res_framerate.framerate; }
+private:
 private:
     std::chrono::steady_clock::time_point m_last_tx_frame_drop_calculation=std::chrono::steady_clock::now();
     int m_last_tx_frame_drop_calculation_count=-1;
